@@ -1,6 +1,6 @@
 .csv
-
 .env
+.DS_Store
 
 scraper/
 data/
