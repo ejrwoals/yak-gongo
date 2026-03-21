@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>약사 구인공고 통계</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Nanum Gothic', sans-serif;
+      background: #f5f7fa;
+      color: #333;
+    }
+    header {
+      background: #2c3e50;
+      color: white;
+      padding: 24px 40px;
+    }
+    header h1 { font-size: 1.8rem; font-weight: 700; }
+    header p  { margin-top: 6px; font-size: 0.95rem; opacity: 0.8; }
+
+    .summary-bar {
+      display: flex;
+      gap: 16px;
+      padding: 24px 40px;
+      background: white;
+      border-bottom: 1px solid #e0e0e0;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: #f0f4ff;
+      border-radius: 10px;
+      padding: 16px 24px;
+      min-width: 160px;
+      text-align: center;
+    }
+    .stat-card .label { font-size: 0.82rem; color: #666; margin-bottom: 6px; }
+    .stat-card .value { font-size: 1.6rem; font-weight: 700; color: #2c3e50; }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 24px;
+      padding: 32px 40px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .chart-card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      padding: 24px;
+    }
+    .chart-card img { width: 100%; height: auto; display: block; }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: #999;
+      font-size: 0.82rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>약사 구인공고 통계</h1>
+  <p>약문약답 &amp; 팜리크루트 공고 분석 — 총 {{ stats.total }}개 공고</p>
+</header>
+
+<div class="summary-bar">
+  <div class="stat-card">
+    <div class="label">전체 공고</div>
+    <div class="value">{{ stats.total }}개</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">지속성 근무</div>
+    <div class="value">{{ stats.continuous_count }}개</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">일회성 근무</div>
+    <div class="value">{{ stats.one_time_count }}개</div>
+  </div>
+  {% if stats.weekend_mean_wage %}
+  <div class="stat-card">
+    <div class="label">주말 파트 평균 시급</div>
+    <div class="value">{{ stats.weekend_mean_wage|floatformat:2 }}만원</div>
+  </div>
+  {% endif %}
+  {% if stats.fulltime_mean_wage %}
+  <div class="stat-card">
+    <div class="label">풀타임 평균 시급</div>
+    <div class="value">{{ stats.fulltime_mean_wage|floatformat:2 }}만원</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="charts-grid">
+
+  {% if chart_region %}
+  <div class="chart-card">
+    <img src="data:image/png;base64,{{ chart_region }}" alt="지역 대분류별 공고 수">
+  </div>
+  {% endif %}
+
+  {% if chart_one_time %}
+  <div class="chart-card">
+    <img src="data:image/png;base64,{{ chart_one_time }}" alt="일회성 vs 지속성">
+  </div>
+  {% endif %}
+
+  {% if chart_hours %}
+  <div class="chart-card" style="grid-column: span 2;">
+    <img src="data:image/png;base64,{{ chart_hours }}" alt="주당 근무 시간 히스토그램">
+  </div>
+  {% endif %}
+
+  {% if chart_weekend_wage %}
+  <div class="chart-card">
+    <img src="data:image/png;base64,{{ chart_weekend_wage }}" alt="주말 파트 시급">
+  </div>
+  {% endif %}
+
+  {% if chart_fulltime_wage %}
+  <div class="chart-card">
+    <img src="data:image/png;base64,{{ chart_fulltime_wage }}" alt="풀타임 시급">
+  </div>
+  {% endif %}
+
+</div>
+
+<footer>
+  데이터 출처: 약문약답, 팜리크루트 &nbsp;|&nbsp; 분석 목적으로만 사용
+</footer>
+
+</body>
+</html>

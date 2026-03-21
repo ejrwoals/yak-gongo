@@ -1,2 +1,13 @@
-pandas>=1.5.0
-numpy>=1.21.0
+django>=6.0
+python-dotenv>=1.0
+openai>=1.0
+google-genai>=1.0
+selenium>=4.0
+webdriver-manager>=4.0
+pandas>=1.5
+numpy>=1.21
+matplotlib>=3.5
+seaborn>=0.12
+Pillow>=9.0
+scipy>=1.9
+statsmodels>=0.13
