@@ -1,4 +1,14 @@
+import threading
+
+import django.db
 from django.contrib import admin
+from django.core.management import call_command
+from django.http import JsonResponse
+from django.shortcuts import redirect, render
+from django.urls import path
+from django.utils import timezone
+
+from .forms import PipelineRunForm
 from .models import JobPosting, PipelineRun
 
 
@@ -14,7 +24,6 @@ class JobPostingAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
     list_per_page = 50
 
-    # 리뷰 필드는 목록에서 바로 수정 가능
     list_editable = ('user_reviewed',)
 
     readonly_fields = ('url', 'inserted_at', 'gpt_output_log', 'gpt_error_log', 'body')
@@ -60,3 +69,106 @@ class PipelineRunAdmin(admin.ModelAdmin):
     list_filter = ('source', 'status')
     ordering = ('-started_at',)
     readonly_fields = ('started_at',)
+
+    change_list_template = 'admin/postings/pipelinerun/change_list.html'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('run/', self.admin_site.admin_view(self.run_pipeline_view), name='pipelinerun_run'),
+            path('log/<int:run_id>/', self.admin_site.admin_view(self.run_log_view), name='pipelinerun_log'),
+            path('status/<int:run_id>/', self.admin_site.admin_view(self.run_status_view), name='pipelinerun_status'),
+        ]
+        return custom + urls
+
+    def run_pipeline_view(self, request):
+        """파이프라인 실행 폼 페이지."""
+        already_running = PipelineRun.objects.filter(status='running').first()
+
+        if request.method == 'POST':
+            form = PipelineRunForm(request.POST)
+            if form.is_valid():
+                if already_running:
+                    self.message_user(request, f'이미 실행 중인 파이프라인이 있습니다. (Run #{already_running.id})', level='warning')
+                else:
+                    kwargs = form.get_command_kwargs()
+                    run = PipelineRun.objects.create(
+                        source=kwargs['source'],
+                        status='running',
+                        log_output='파이프라인 시작...\n',
+                    )
+                    _start_pipeline_thread(run.id, kwargs)
+                    return redirect(f'../log/{run.id}/')
+        else:
+            form = PipelineRunForm(initial={
+                'source': 'yakdap',
+                'start_id': 38800,
+                'count': 100,
+                'step': 2,
+                'year': 2024,
+                'big_category': '서울',
+                'headless': True,
+            })
+
+        context = {
+            **self.admin_site.each_context(request),
+            'title': '파이프라인 실행',
+            'form': form,
+            'already_running': already_running,
+            'opts': self.model._meta,
+        }
+        return render(request, 'admin/postings/pipelinerun/run_pipeline.html', context)
+
+    def run_log_view(self, request, run_id):
+        """실행 로그 확인 페이지."""
+        try:
+            run = PipelineRun.objects.get(id=run_id)
+        except PipelineRun.DoesNotExist:
+            return redirect('../')
+        context = {
+            **self.admin_site.each_context(request),
+            'title': f'파이프라인 로그 #{run_id}',
+            'run': run,
+            'opts': self.model._meta,
+        }
+        return render(request, 'admin/postings/pipelinerun/run_log.html', context)
+
+    def run_status_view(self, request, run_id):
+        """AJAX: 현재 실행 상태 + 로그 반환."""
+        try:
+            run = PipelineRun.objects.get(id=run_id)
+        except PipelineRun.DoesNotExist:
+            return JsonResponse({'error': 'not found'}, status=404)
+        return JsonResponse({
+            'status': run.status,
+            'log_output': run.log_output,
+            'total_scraped': run.total_scraped,
+            'total_processed': run.total_processed,
+            'total_errors': run.total_errors,
+            'started_at': run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else None,
+            'finished_at': run.finished_at.strftime('%Y-%m-%d %H:%M:%S') if run.finished_at else None,
+        })
+
+
+def _start_pipeline_thread(run_id: int, kwargs: dict):
+    """백그라운드 thread에서 run_pipeline management command를 실행한다."""
+    def _target():
+        django.db.close_old_connections()
+        try:
+            cmd_kwargs = dict(kwargs)
+            cmd_kwargs['run_id'] = run_id
+            call_command('run_pipeline', **cmd_kwargs)
+        except Exception as e:
+            try:
+                run = PipelineRun.objects.get(id=run_id)
+                run.status = 'failed'
+                run.finished_at = timezone.now()
+                run.log_output += f'\n[FATAL ERROR] {e}\n'
+                run.save()
+            except Exception:
+                pass
+        finally:
+            django.db.close_old_connections()
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()

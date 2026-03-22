@@ -1,0 +1,109 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}파이프라인 로그 #{{ run.id }}{% endblock %}
+
+{% block content %}
+<h1>파이프라인 로그 #{{ run.id }}</h1>
+
+<div style="display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap;">
+  <div class="module" style="padding: 12px 20px; min-width: 140px;">
+    <strong>소스</strong><br>{{ run.source }}
+  </div>
+  <div class="module" style="padding: 12px 20px; min-width: 140px;">
+    <strong>상태</strong><br>
+    <span id="status-badge" style="
+      font-weight: bold;
+      color: {% if run.status == 'done' %}#28a745{% elif run.status == 'failed' %}#dc3545{% else %}#fd7e14{% endif %}
+    ">{{ run.get_status_display }}</span>
+  </div>
+  <div class="module" style="padding: 12px 20px; min-width: 140px;">
+    <strong>스크래핑</strong><br><span id="stat-scraped">{{ run.total_scraped }}</span>개
+  </div>
+  <div class="module" style="padding: 12px 20px; min-width: 140px;">
+    <strong>저장 완료</strong><br><span id="stat-processed">{{ run.total_processed }}</span>개
+  </div>
+  <div class="module" style="padding: 12px 20px; min-width: 140px;">
+    <strong>에러</strong><br><span id="stat-errors">{{ run.total_errors }}</span>개
+  </div>
+  <div class="module" style="padding: 12px 20px; min-width: 200px;">
+    <strong>시작</strong><br>{{ run.started_at|date:"Y-m-d H:i:s" }}
+  </div>
+  <div class="module" style="padding: 12px 20px; min-width: 200px;">
+    <strong>완료</strong><br><span id="stat-finished">{{ run.finished_at|date:"Y-m-d H:i:s"|default:"-" }}</span>
+  </div>
+</div>
+
+<div style="margin-bottom: 8px; display: flex; align-items: center; gap: 12px;">
+  <strong>실행 로그</strong>
+  <span id="polling-indicator" style="font-size: 12px; color: #666;">
+    {% if run.status == 'running' %}● 실시간 업데이트 중...{% endif %}
+  </span>
+</div>
+
+<pre id="log-box" style="
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: 600px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+">{{ run.log_output }}</pre>
+
+<div style="margin-top: 12px;">
+  <a href="{% url 'admin:postings_pipelinerun_changelist' %}" class="button">← 목록으로</a>
+  {% if run.status == 'running' %}
+  <span style="margin-left: 16px; color: #666; font-size: 13px;">3초마다 자동 갱신됩니다.</span>
+  {% endif %}
+</div>
+
+{% if run.status == 'running' %}
+<script>
+  const runId = {{ run.id }};
+  const statusUrl = "{% url 'admin:pipelinerun_status' run.id %}";
+  const logBox = document.getElementById('log-box');
+  const statusBadge = document.getElementById('status-badge');
+  const pollingIndicator = document.getElementById('polling-indicator');
+
+  const statusColors = { done: '#28a745', failed: '#dc3545', running: '#fd7e14' };
+  const statusLabels = { done: '완료', failed: '실패', running: '실행 중' };
+
+  function scrollToBottom() {
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  scrollToBottom();
+
+  function poll() {
+    fetch(statusUrl)
+      .then(r => r.json())
+      .then(data => {
+        logBox.textContent = data.log_output;
+        scrollToBottom();
+
+        statusBadge.textContent = statusLabels[data.status] || data.status;
+        statusBadge.style.color = statusColors[data.status] || '#333';
+
+        document.getElementById('stat-scraped').textContent = data.total_scraped;
+        document.getElementById('stat-processed').textContent = data.total_processed;
+        document.getElementById('stat-errors').textContent = data.total_errors;
+        if (data.finished_at) {
+          document.getElementById('stat-finished').textContent = data.finished_at;
+        }
+
+        if (data.status === 'running') {
+          setTimeout(poll, 3000);
+        } else {
+          pollingIndicator.textContent = data.status === 'done' ? '✓ 완료' : '✗ 실패';
+          pollingIndicator.style.color = statusColors[data.status];
+        }
+      })
+      .catch(() => setTimeout(poll, 5000));
+  }
+
+  setTimeout(poll, 3000);
+</script>
+{% endif %}
+{% endblock %}

@@ -82,6 +82,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'data' / 'db.sqlite3',
+        'OPTIONS': {
+            'timeout': 20,  # 백그라운드 파이프라인 thread와의 동시 접근 대기
+        },
     }
 }
 
@@ -124,10 +127,8 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # LLM
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', '')
-LLM_MODEL = os.environ.get('LLM_MODEL', 'gemini-1.5-flash-latest')  # primary pipeline
-FALLBACK_LLM_MODEL = os.environ.get('FALLBACK_LLM_MODEL', 'gpt-4o')  # error fallback
+LLM_MODEL = os.environ.get('LLM_MODEL', 'gemini-1.5-flash-latest')
 
 # Pharmacy wage bounds (단위: 만원)
 MIN_HOURLY_WAGE = 1.8

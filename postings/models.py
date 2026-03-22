@@ -78,6 +78,7 @@ class PipelineRun(models.Model):
     total_processed = models.IntegerField(default=0)
     total_errors = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running')
+    log_output = models.TextField(blank=True)
 
     class Meta:
         ordering = ['-started_at']

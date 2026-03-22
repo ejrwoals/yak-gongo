@@ -34,9 +34,15 @@ yak-gongo/
 │
 ├── postings/                # 핵심 앱: 공고 DB + Admin
 │   ├── models.py            # JobPosting, PipelineRun
-│   ├── admin.py             # Admin 커스터마이징
-│   └── management/commands/
-│       └── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
+│   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI
+│   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
+│   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
+│   ├── management/commands/
+│   │   └── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
+│   └── templates/admin/postings/pipelinerun/
+│       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
+│       ├── run_pipeline.html# 실행 옵션 폼 페이지
+│       └── run_log.html     # 실시간 로그 폴링 페이지
 │
 ├── pipeline/                # LLM 파이프라인 (비즈니스 로직)
 │   ├── prompts.py           # 5개 task 프롬프트 / few-shot
@@ -180,6 +186,7 @@ python manage.py run_pipeline \
 |---|---|
 | `--headless` | 브라우저 창 없이 백그라운드 실행 |
 | `--dry-run` | 스크래핑만 하고 LLM 처리·DB 저장은 건너뜀 (URL 확인용) |
+| `--run-id` | Admin UI에서 미리 생성된 PipelineRun ID (내부용, 수동 사용 불필요) |
 
 ### 처리 흐름
 
@@ -208,9 +215,31 @@ PipelineRun 이력 기록
 
 ## Django Admin 리뷰 워크플로우
 
-http://localhost:8000/admin/ 접속 후 **Postings > Job postings** 클릭.
+http://localhost:8000/admin/ 접속 후 사용.
 
-### 목록 화면
+### Admin에서 파이프라인 실행
+
+**Postings > Pipeline runs** 목록 상단의 **파이프라인 실행** 버튼을 클릭하면 브라우저에서 바로 수집 + LLM 처리를 실행할 수 있다.
+
+1. 소스(약문약답/팜리크루트) 선택 및 옵션 입력
+2. **실행** 버튼 클릭 → 백그라운드 thread에서 `run_pipeline` 커맨드 실행
+3. 자동으로 실시간 로그 페이지(`/log/<id>/`)로 이동하여 진행 상황 확인 (AJAX 폴링)
+
+동시에 하나의 파이프라인만 실행 가능하며, 이미 실행 중인 경우 경고 메시지가 표시된다.
+
+**Admin 커스텀 URL:**
+
+| URL 패턴 | 설명 |
+|---|---|
+| `pipelinerun/run/` | 파이프라인 실행 폼 페이지 |
+| `pipelinerun/log/<id>/` | 실시간 로그 확인 페이지 |
+| `pipelinerun/status/<id>/` | AJAX 상태 + 로그 JSON 엔드포인트 |
+
+서버가 재시작되면 `postings/apps.py`에서 비정상 종료된 `running` 상태의 PipelineRun을 자동으로 `failed`로 변경한다.
+
+### 공고 목록 화면
+
+**Postings > Job postings** 클릭.
 
 - **필터** (우측 사이드바): 지역 대분류, 플랫폼, 에러 여부, 검토 여부, 일회성/지속성
 - **검색**: 공고 제목, 약국 이름, 지역, URL
@@ -265,7 +294,7 @@ http://localhost:8000/stats/ 에서 공개용 통계 페이지를 확인할 수 
 |---|---|
 | `prompts.py` | `QUERY_TASK_1~5`, `FEW_SHOT_1~5` 상수 — 프롬프트 문자열만 관리 |
 | `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 |
-| `runner.py` | `process_posting(body, client, model_name)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환 |
+| `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간·시급 재계산 |
 | `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환 |
 
@@ -279,6 +308,9 @@ from pipeline.runner import process_posting
 client = genai.Client(api_key=settings.GOOGLE_API_KEY)
 result = process_posting(body="공고 본문 텍스트", client=client, model_name=settings.LLM_MODEL)
 # result는 JobPosting 필드에 대응하는 dict
+
+# 로그 콜백을 전달하면 처리 단계별 상세 로그를 받을 수 있다
+result = process_posting(body="...", client=client, model_name=settings.LLM_MODEL, log=print)
 ```
 
 ### `scraper/`
@@ -365,6 +397,7 @@ Task 5: 복리후생 추출 (항상 실행)
 | `big_category` | CharField | 지역 대분류 (예: `서울`) |
 | `is_salary_disclosed` | BooleanField | 급여 명시 여부 |
 | `is_one_time_work` | BooleanField | 일회성 근무 여부 |
+| `one_time_hourly_wage` | FloatField | 일회성 근무 시급 (만원) |
 | `wage_type` | CharField | `monthly` / `yearly` / 기타 |
 | `wage_raw` | FloatField | LLM이 추출한 원본 급여 (만원) |
 | `hourly_wage` | FloatField | 계산된 시급 (만원) |
@@ -373,6 +406,8 @@ Task 5: 복리후생 추출 (항상 실행)
 | `weekday_start_time` | FloatField | 평일 출근 시각 (소수 시간, 예: 9.0) |
 | `weekday_end_time` | FloatField | 평일 퇴근 시각 |
 | `weekend_work_days` | FloatField | 주말 근무 일수 |
+| `weekend_start_time` | FloatField | 주말 출근 시각 (소수 시간) |
+| `weekend_end_time` | FloatField | 주말 퇴근 시각 |
 | `hours_per_week` | FloatField | 주당 총 근무 시간 |
 | `hours_per_month` | FloatField | 월 총 근무 시간 |
 | `monthly_leave` | CharField | 월차 정보 |
@@ -400,6 +435,7 @@ Task 5: 복리후생 추출 (항상 실행)
 | `total_processed` | DB에 저장된 공고 수 |
 | `total_errors` | 에러 발생 공고 수 |
 | `status` | `running` / `done` / `failed` |
+| `log_output` | 실행 중 누적되는 상세 로그 (Admin 실시간 로그 페이지에서 표시) |
 
 ---
 

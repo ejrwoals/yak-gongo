@@ -1,0 +1,96 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}파이프라인 실행{% endblock %}
+
+{% block content %}
+<h1>파이프라인 실행</h1>
+
+{% if already_running %}
+<div class="errornote">
+  이미 실행 중인 파이프라인이 있습니다. (Run #{{ already_running.id }} / {{ already_running.source }} / 시작: {{ already_running.started_at|date:"Y-m-d H:i:s" }})
+  &nbsp;<a href="{% url 'admin:pipelinerun_log' already_running.id %}">로그 보기 →</a>
+</div>
+{% endif %}
+
+<div style="max-width: 600px; margin-top: 20px;">
+  <form method="post">
+    {% csrf_token %}
+
+    <fieldset class="module aligned">
+      <h2>소스 선택</h2>
+      <div class="form-row">
+        <div>
+          {% for radio in form.source %}
+            <label style="margin-right: 20px;">
+              {{ radio.tag }} {{ radio.choice_label }}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="module aligned" id="yakdap-options">
+      <h2>약문약답 옵션</h2>
+      <div class="form-row field-start_id">
+        <label>{{ form.start_id.label }}:</label>
+        {{ form.start_id }}
+        <p class="help">{{ form.start_id.help_text }}</p>
+      </div>
+      <div class="form-row field-count">
+        <label>{{ form.count.label }}:</label>
+        {{ form.count }}
+      </div>
+      <div class="form-row field-step">
+        <label>{{ form.step.label }}:</label>
+        {{ form.step }}
+      </div>
+      <div class="form-row field-year">
+        <label>{{ form.year.label }}:</label>
+        {{ form.year }}
+      </div>
+    </fieldset>
+
+    <fieldset class="module aligned" id="pharm-options" style="display:none;">
+      <h2>팜리크루트 옵션</h2>
+      <div class="form-row field-big_category">
+        <label>{{ form.big_category.label }}:</label>
+        {{ form.big_category }}
+        <p class="help">{{ form.big_category.help_text }}</p>
+      </div>
+    </fieldset>
+
+    <fieldset class="module aligned">
+      <h2>공통 옵션</h2>
+      <div class="form-row">
+        <label>{{ form.headless.label }}: {{ form.headless }}</label>
+        <p class="help">{{ form.headless.help_text }}</p>
+      </div>
+      <div class="form-row">
+        <label>{{ form.dry_run.label }}: {{ form.dry_run }}</label>
+        <p class="help">{{ form.dry_run.help_text }}</p>
+      </div>
+    </fieldset>
+
+    <div class="submit-row">
+      <input type="submit" value="파이프라인 실행" class="default"
+             {% if already_running %}disabled{% endif %}>
+      <a href="{% url 'admin:postings_pipelinerun_changelist' %}" class="closelink">취소</a>
+    </div>
+  </form>
+</div>
+
+<script>
+  function toggleOptions() {
+    const radios = document.querySelectorAll('input[name="source"]');
+    let selected = '';
+    radios.forEach(r => { if (r.checked) selected = r.value; });
+    document.getElementById('yakdap-options').style.display = selected === 'yakdap' ? '' : 'none';
+    document.getElementById('pharm-options').style.display = selected === 'pharm_recruit' ? '' : 'none';
+  }
+  document.querySelectorAll('input[name="source"]').forEach(r => {
+    r.addEventListener('change', toggleOptions);
+  });
+  toggleOptions();
+</script>
+{% endblock %}
