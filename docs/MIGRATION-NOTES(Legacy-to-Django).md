@@ -64,6 +64,28 @@ run_pipeline: Gemini로 전체 처리
 
 (폴백 LLM 로직은 아직 구현하지 않았다.)
 
+### 파이프라인 흐름
+
+```
+공고 body 텍스트 입력
+        │
+   [Task 1] 급여 정보 + 일회성 여부 추출
+        │
+   is_one_time?
+   ├── True  → [Task 2] 일회성 근무 일정 + 시급 계산
+   └── False → [Task 3] 평일/주말 근무 일정 추출
+                     │
+               [Task 4] Task 3 결과 검토·보정
+        │
+   [Task 5] 복리후생 추출 (공통)
+        │
+   [validator] 급여·시간 일관성 검증 + 파생값 계산
+        │
+   [salary] 세전 → 세후 급여 환산
+        │
+   JobPosting 저장
+```
+
 ### SDK 변경
 
 | 항목 | Legacy | 현재 |
@@ -125,3 +147,28 @@ stats/
 | 파이프라인 실행 | 셀 직접 실행 | `python manage.py run_pipeline --source yakdap` |
 | 패키지 관리 | `pip install` (셀 내 직접) | `uv pip install -r requirements.txt` |
 | 환경변수 | Colab secrets / 하드코딩 | `.env` + `python-dotenv` |
+
+---
+
+## 5. 주요 설정값 (`config/settings.py`)
+
+| 항목 | 값 |
+|---|---|
+| `LLM_MODEL` | `gemini-1.5-flash-latest` (env 오버라이드 가능) |
+| `FALLBACK_LLM_MODEL` | `gpt-4o` |
+| `MIN_HOURLY_WAGE` | 1.8 (만원) |
+| `MAX_HOURLY_WAGE` | 5.5 (만원) |
+| `MAX_WORK_HOURS_PER_WEEK` | 56 |
+| `WEEKS_PER_MONTH` | 4.34 |
+
+---
+
+## 6. 지역 분류 (`geo/mapping.py`)
+
+| big_category | 해당 지역 |
+|---|---|
+| 서울 | 서울 전 구 |
+| 경기 중부 | 성남, 수원, 용인, 화성, 안양, 과천 등 |
+| 경기 외곽 | 평택, 안산, 시흥, 파주, 양주 등 |
+| 인천 | 인천 전 구 |
+| 지방 | 그 외 전국 |
