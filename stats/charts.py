@@ -134,21 +134,21 @@ def chart_weekend_hourly_wage_by_region() -> str:
             is_one_time_work=False,
             weekend_work_days__gt=0,
             weekday_work_days=0,
-            hourly_wage__isnull=False,
+            net_hourly_wage__isnull=False,
             big_category__in=REGION_ORDER,
         )
-        .values('big_category', 'hourly_wage')
+        .values('big_category', 'net_hourly_wage')
     )
     if not qs:
         return ''
 
     import pandas as pd
     df = pd.DataFrame(qs)
-    df['hourly_wage'] = df['hourly_wage'].round(1)
+    df['net_hourly_wage'] = df['net_hourly_wage'].round(1)
 
-    grouped = df.groupby(['big_category', 'hourly_wage']).size().reset_index(name='count')
-    means = df.groupby('big_category')['hourly_wage'].mean()
-    ns = df.groupby('big_category')['hourly_wage'].count()
+    grouped = df.groupby(['big_category', 'net_hourly_wage']).size().reset_index(name='count')
+    means = df.groupby('big_category')['net_hourly_wage'].mean()
+    ns = df.groupby('big_category')['net_hourly_wage'].count()
 
     # categorical order
     cat_type = pd.CategoricalDtype(REGION_ORDER, ordered=True)
@@ -156,10 +156,10 @@ def chart_weekend_hourly_wage_by_region() -> str:
     grouped = grouped.sort_values('big_category')
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.scatter(grouped['big_category'].astype(str), grouped['hourly_wage'],
+    ax.scatter(grouped['big_category'].astype(str), grouped['net_hourly_wage'],
                s=grouped['count'] * 50, color='black', alpha=0.2)
     for i, row in grouped.iterrows():
-        ax.text(str(row['big_category']), row['hourly_wage'], str(row['count']),
+        ax.text(str(row['big_category']), row['net_hourly_wage'], str(row['count']),
                 ha='center', va='center', fontsize=10)
 
     for region in means.index:
@@ -167,14 +167,14 @@ def chart_weekend_hourly_wage_by_region() -> str:
             ax.plot(region, means[region], 'rs', markersize=8)
             ax.text(region, means[region], f'  {means[region]:.2f}', fontsize=12,
                     ha='left', color='red')
-            y_min = df['hourly_wage'].min()
+            y_min = df['net_hourly_wage'].min()
             ax.text(region, y_min - 0.15, f'n={ns[region]}', ha='center', fontsize=10)
 
     ax.set_title('주말(토,일) 파트 시급\n', fontsize=16, fontweight='bold')
     ax.set_xlabel('\n지역 대분류')
     ax.set_ylabel('시급(단위 : 만원)\n')
-    y_range = df['hourly_wage'].max() - df['hourly_wage'].min()
-    ax.set_ylim(df['hourly_wage'].min() - 0.3, df['hourly_wage'].max() + 0.3)
+    y_range = df['net_hourly_wage'].max() - df['net_hourly_wage'].min()
+    ax.set_ylim(df['net_hourly_wage'].min() - 0.3, df['net_hourly_wage'].max() + 0.3)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return _fig_to_base64(fig)
@@ -187,31 +187,31 @@ def chart_fulltime_hourly_wage_by_region() -> str:
         .filter(
             is_one_time_work=False,
             weekday_work_days__gte=4,
-            hourly_wage__isnull=False,
+            net_hourly_wage__isnull=False,
             big_category__in=REGION_ORDER,
         )
-        .values('big_category', 'hourly_wage')
+        .values('big_category', 'net_hourly_wage')
     )
     if not qs:
         return ''
 
     import pandas as pd
     df = pd.DataFrame(qs)
-    df['hourly_wage'] = df['hourly_wage'].round(1)
+    df['net_hourly_wage'] = df['net_hourly_wage'].round(1)
 
-    grouped = df.groupby(['big_category', 'hourly_wage']).size().reset_index(name='count')
-    means = df.groupby('big_category')['hourly_wage'].mean()
-    ns = df.groupby('big_category')['hourly_wage'].count()
+    grouped = df.groupby(['big_category', 'net_hourly_wage']).size().reset_index(name='count')
+    means = df.groupby('big_category')['net_hourly_wage'].mean()
+    ns = df.groupby('big_category')['net_hourly_wage'].count()
 
     cat_type = pd.CategoricalDtype(REGION_ORDER, ordered=True)
     grouped['big_category'] = grouped['big_category'].astype(cat_type)
     grouped = grouped.sort_values('big_category')
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.scatter(grouped['big_category'].astype(str), grouped['hourly_wage'],
+    ax.scatter(grouped['big_category'].astype(str), grouped['net_hourly_wage'],
                s=grouped['count'] * 50, color='black', alpha=0.2)
     for i, row in grouped.iterrows():
-        ax.text(str(row['big_category']), row['hourly_wage'], str(row['count']),
+        ax.text(str(row['big_category']), row['net_hourly_wage'], str(row['count']),
                 ha='center', va='center', fontsize=10)
 
     for region in means.index:
@@ -219,13 +219,13 @@ def chart_fulltime_hourly_wage_by_region() -> str:
             ax.plot(region, means[region], 'rs', markersize=8)
             ax.text(region, means[region], f'  {means[region]:.2f}', fontsize=12,
                     ha='left', color='red')
-            y_min = df['hourly_wage'].min()
+            y_min = df['net_hourly_wage'].min()
             ax.text(region, y_min - 0.15, f'n={ns[region]}', ha='center', fontsize=10)
 
     ax.set_title('풀타임 근무 시급\n', fontsize=16, fontweight='bold')
     ax.set_xlabel('\n지역 대분류')
     ax.set_ylabel('시급(단위 : 만원)\n')
-    ax.set_ylim(df['hourly_wage'].min() - 0.3, df['hourly_wage'].max() + 0.3)
+    ax.set_ylim(df['net_hourly_wage'].min() - 0.3, df['net_hourly_wage'].max() + 0.3)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return _fig_to_base64(fig)
@@ -243,6 +243,6 @@ def get_summary_stats() -> dict:
         'total': total,
         'continuous_count': continuous.count(),
         'one_time_count': JobPosting.objects.filter(is_one_time_work=True).count(),
-        'weekend_mean_wage': weekend.aggregate(v=Avg('hourly_wage'))['v'],
-        'fulltime_mean_wage': fulltime.aggregate(v=Avg('hourly_wage'))['v'],
+        'weekend_mean_wage': weekend.aggregate(v=Avg('net_hourly_wage'))['v'],
+        'fulltime_mean_wage': fulltime.aggregate(v=Avg('net_hourly_wage'))['v'],
     }

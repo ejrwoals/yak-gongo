@@ -52,6 +52,19 @@ class Command(BaseCommand):
         )
         self.stdout.write(f'기존 URL {len(existing_urls)}개 로드 완료')
 
+        login_event = options.get('login_event')
+
+        # 스크래핑 단계용 로그 콜백 (DB에 실시간 기록)
+        def _scrape_log(msg: str):
+            self.stdout.write(msg)
+            if run_id:
+                try:
+                    run = PipelineRun.objects.get(id=run_id)
+                    run.log_output += msg + '\n'
+                    run.save(update_fields=['log_output'])
+                except PipelineRun.DoesNotExist:
+                    pass
+
         # ── 스크래핑 ──────────────────────────────────────────────
         if source == 'yakdap':
             from scraper.yakdap import scrape
@@ -62,6 +75,8 @@ class Command(BaseCommand):
                 year=options['year'],
                 headless=options['headless'],
                 existing_urls=existing_urls,
+                login_event=login_event,
+                log=_scrape_log,
             )
         else:
             from scraper.pharm_recruit import scrape
@@ -69,18 +84,31 @@ class Command(BaseCommand):
                 big_category=options['big_category'],
                 headless=options['headless'],
                 existing_urls=existing_urls,
+                log=_scrape_log,
             )
 
         self.stdout.write(f'스크래핑 완료: {len(raw_postings)}개')
 
         if dry_run:
+            dry_log_lines = [f'스크래핑 완료: {len(raw_postings)}개\n']
+            for i, raw in enumerate(raw_postings, start=1):
+                line = (
+                    f'[{i}/{len(raw_postings)}] '
+                    f'{raw.get("title", "(제목 없음)")} | '
+                    f'{raw.get("pharmacy_name", "")} | '
+                    f'{raw.get("city", "")} | '
+                    f'{raw.get("url", "")}'
+                )
+                self.stdout.write(line)
+                dry_log_lines.append(line + '\n')
+            dry_log_lines.append('[dry-run] LLM 처리 및 DB 저장 건너뜀\n')
             self.stdout.write('[dry-run] LLM 처리 및 DB 저장 건너뜀')
             if run_id:
                 run = PipelineRun.objects.get(id=run_id)
                 run.total_scraped = len(raw_postings)
                 run.status = 'done'
                 run.finished_at = timezone.now()
-                run.log_output += f'스크래핑 완료: {len(raw_postings)}개\n[dry-run] LLM 처리 건너뜀\n'
+                run.log_output += ''.join(dry_log_lines)
                 run.save()
             return
 

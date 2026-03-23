@@ -166,7 +166,14 @@ big_category_dict = {
 
 def normalize_city(address: str) -> str:
     """전체 주소 문자열 → 정규화된 지역(city) 이름"""
-    return conversion_dict.get(address, address)
+    # 정확히 일치하면 바로 반환
+    if address in conversion_dict:
+        return conversion_dict[address]
+    # 전체 주소에서 시/구 prefix로 매칭
+    for key, value in conversion_dict.items():
+        if address.startswith(key):
+            return value
+    return address
 
 
 def assign_big_category(city: str) -> str:

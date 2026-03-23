@@ -128,7 +128,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # LLM
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', '')
-LLM_MODEL = os.environ.get('LLM_MODEL', 'gemini-1.5-flash-latest')
+LLM_MODEL = os.environ.get('LLM_MODEL', 'gemini-2.5-flash')
 
 # Pharmacy wage bounds (단위: 만원)
 MIN_HOURLY_WAGE = 1.8

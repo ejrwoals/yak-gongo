@@ -48,7 +48,7 @@ def process_posting(
         'one_time_hourly_wage': None,
         'wage_type': '',
         'wage_raw': None,
-        'hourly_wage': None,
+        'net_hourly_wage': None,
         'net_salary': None,
         # schedule
         'weekday_work_days': None,
@@ -141,7 +141,11 @@ def process_posting(
         ws = result['weekend_work_days'] or 0
         wstart = result['weekday_start_time']
         wend = result['weekday_end_time']
-        _log(f'  [Task3/4] 평일 {wd}일 {wstart}~{wend}시 / 주말 {ws}일')
+        we_start = result['weekend_start_time']
+        we_end = result['weekend_end_time']
+        weekday_str = f'평일 {wd}일 {wstart}~{wend}시' if wstart and wend else f'평일 {wd}일'
+        weekend_str = f'주말 {ws}일 {we_start}~{we_end}시' if we_start and we_end else f'주말 {ws}일'
+        _log(f'  [Task3/4] {weekday_str} / {weekend_str}')
 
         check_dict = {
             '급여': wage,
@@ -163,10 +167,10 @@ def process_posting(
 
         result['hours_per_week'] = hours_per_week
         result['hours_per_month'] = hours_per_week * 4.34 if hours_per_week else None
-        result['hourly_wage'] = hourly_wage
+        result['net_hourly_wage'] = hourly_wage  # 임시; 세후 환산 후 덮어씌움
 
         if hourly_wage:
-            _log(f'  [검증] 주당 {hours_per_week:.1f}h / 시급 {hourly_wage:.2f}만원')
+            _log(f'  [검증] 주당 {hours_per_week:.1f}h / 시급(세전) {hourly_wage:.2f}만원')
 
         # 세후 월급 계산
         if is_salary and isinstance(wage, (int, float)) and result['hours_per_month']:
@@ -181,7 +185,8 @@ def process_posting(
 
                 if monthly_gross is not None:
                     result['net_salary'] = to_net_salary(monthly_gross, bool(is_after_tax))
-                    _log(f'  [급여] 세후 월급: {result["net_salary"]:.1f}만원')
+                    result['net_hourly_wage'] = result['net_salary'] / result['hours_per_month']
+                    _log(f'  [급여] 세후 월급: {result["net_salary"]:.1f}만원 / 세후 시급: {result["net_hourly_wage"]:.2f}만원')
             except Exception:
                 pass
 
@@ -196,11 +201,11 @@ def process_posting(
         _log(f'  [Task5] 월차: {result["monthly_leave"]} | 경력: {result["experience_required"] or "무관"} | 식사: {result["meal_info"] or "없음"}')
 
     # 요약문 생성
-    hw = result.get('hourly_wage')
+    hw = result.get('net_hourly_wage')
     result['gpt_summary'] = (
         f"급여{'명시' if result['is_salary_disclosed'] else '미명시'} | "
         f"{'일회성' if result['is_one_time_work'] else '지속성'}"
-        + (f" | 시급 {hw:.2f}만원" if hw else '')
+        + (f" | 세후 시급 {hw:.2f}만원" if hw else '')
     )
 
     if error_history:

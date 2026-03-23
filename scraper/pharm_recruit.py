@@ -121,6 +121,7 @@ def scrape(
     big_category: str,
     headless: bool = False,
     existing_urls: set[str] | None = None,
+    log=None,
 ) -> list[dict]:
     """
     팜리크루트 공고를 순회하여 raw posting dict 리스트를 반환.
@@ -140,6 +141,8 @@ def scrape(
     if existing_urls is None:
         existing_urls = set()
 
+    _log = log or (lambda msg: print(msg))
+
     city_url_dict = CITY_URL_DICT[big_category]
 
     options = webdriver.ChromeOptions()
@@ -152,7 +155,7 @@ def scrape(
     try:
         for city, url_list in city_url_dict.items():
             for url in url_list:
-                print(f'페이지: {city} — {url}')
+                _log(f'페이지: {city} — {url}')
                 driver.get(url)
                 driver.implicitly_wait(3)
 
@@ -204,13 +207,13 @@ def scrape(
                             'city': city,
                             'big_category': big_category,
                         })
-                        print(f'  {city} - {n}번 글 수집 완료')
+                        _log(f'  {city} - {n}번 글 수집 완료 | {title} | {name} | {cur_url}')
 
                         driver.back()
                         driver.implicitly_wait(5)
 
                     except Exception as e:
-                        print(f'  {city} - {n}번 글 없음: {e}')
+                        _log(f'  {city} - {n}번 글 없음: {e}')
                         try:
                             driver.switch_to.default_content()
                             driver.back()

@@ -11,12 +11,15 @@ from django.utils import timezone
 from .forms import PipelineRunForm
 from .models import JobPosting, PipelineRun
 
+# run_id → threading.Event 매핑 (카카오 로그인 대기용)
+_login_events: dict[int, threading.Event] = {}
+
 
 @admin.register(JobPosting)
 class JobPostingAdmin(admin.ModelAdmin):
     list_display = (
         'title_short', 'platform', 'big_category', 'city',
-        'hourly_wage', 'created_at', 'user_reviewed', 'has_error',
+        'net_hourly_wage', 'created_at', 'user_reviewed', 'has_error',
     )
     list_display_links = ('title_short',)
     list_filter = ('big_category', 'platform', 'has_error', 'error_corrected', 'user_reviewed', 'is_one_time_work')
@@ -33,7 +36,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             'fields': ('url', 'platform', 'created_at', 'inserted_at', 'title', 'pharmacy_name', 'city', 'big_category'),
         }),
         ('급여', {
-            'fields': ('is_salary_disclosed', 'wage_type', 'wage_raw', 'hourly_wage', 'net_salary', 'is_one_time_work', 'one_time_hourly_wage'),
+            'fields': ('is_salary_disclosed', 'wage_type', 'wage_raw', 'net_hourly_wage', 'net_salary', 'is_one_time_work', 'one_time_hourly_wage'),
         }),
         ('근무 일정', {
             'fields': (
@@ -78,6 +81,7 @@ class PipelineRunAdmin(admin.ModelAdmin):
             path('run/', self.admin_site.admin_view(self.run_pipeline_view), name='pipelinerun_run'),
             path('log/<int:run_id>/', self.admin_site.admin_view(self.run_log_view), name='pipelinerun_log'),
             path('status/<int:run_id>/', self.admin_site.admin_view(self.run_status_view), name='pipelinerun_status'),
+            path('confirm-login/<int:run_id>/', self.admin_site.admin_view(self.confirm_login_view), name='pipelinerun_confirm_login'),
         ]
         return custom + urls
 
@@ -147,17 +151,37 @@ class PipelineRunAdmin(admin.ModelAdmin):
             'total_errors': run.total_errors,
             'started_at': run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else None,
             'finished_at': run.finished_at.strftime('%Y-%m-%d %H:%M:%S') if run.finished_at else None,
+            'waiting_login': run_id in _login_events and not _login_events[run_id].is_set(),
         })
+
+    def confirm_login_view(self, request, run_id):
+        """AJAX: 카카오 로그인 완료 신호를 보낸다."""
+        event = _login_events.get(run_id)
+        if event and not event.is_set():
+            event.set()
+            return JsonResponse({'ok': True})
+        return JsonResponse({'ok': False, 'message': '대기 중인 로그인이 없습니다.'})
 
 
 def _start_pipeline_thread(run_id: int, kwargs: dict):
     """백그라운드 thread에서 run_pipeline management command를 실행한다."""
+    # yakdap인 경우 카카오 로그인 대기용 이벤트 생성
+    if kwargs.get('source') == 'yakdap':
+        event = threading.Event()
+        _login_events[run_id] = event
+    else:
+        event = None
+
     def _target():
         django.db.close_old_connections()
         try:
+            import io
+            from postings.management.commands.run_pipeline import Command as RunPipelineCommand
+            cmd = RunPipelineCommand(stdout=io.StringIO())
             cmd_kwargs = dict(kwargs)
             cmd_kwargs['run_id'] = run_id
-            call_command('run_pipeline', **cmd_kwargs)
+            cmd_kwargs['login_event'] = event
+            cmd.handle(**cmd_kwargs)
         except Exception as e:
             try:
                 run = PipelineRun.objects.get(id=run_id)
@@ -168,6 +192,7 @@ def _start_pipeline_thread(run_id: int, kwargs: dict):
             except Exception:
                 pass
         finally:
+            _login_events.pop(run_id, None)
             django.db.close_old_connections()
 
     t = threading.Thread(target=_target, daemon=True)

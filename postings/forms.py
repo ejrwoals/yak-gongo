@@ -54,6 +54,7 @@ class PipelineRunForm(forms.Form):
             'dry_run': data.get('dry_run', False),
         }
         if source == 'yakdap':
+            kwargs['headless'] = False  # 카카오 로그인 필요
             kwargs['start_id'] = data.get('start_id') or 38800
             kwargs['count'] = data.get('count') or 100
             kwargs['step'] = data.get('step') or 2

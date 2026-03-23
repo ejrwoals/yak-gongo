@@ -21,7 +21,7 @@ class JobPosting(models.Model):
     one_time_hourly_wage = models.FloatField(null=True, blank=True)
     wage_type = models.CharField(max_length=50, blank=True)
     wage_raw = models.FloatField(null=True, blank=True)
-    hourly_wage = models.FloatField(null=True, blank=True)
+    net_hourly_wage = models.FloatField(null=True, blank=True)
     net_salary = models.FloatField(null=True, blank=True)
 
     # --- LLM outputs: schedule ---

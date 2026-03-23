@@ -9,6 +9,7 @@
 """
 import time
 import re
+import threading
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -36,6 +37,8 @@ def scrape(
     year: int = 2024,
     headless: bool = False,
     existing_urls: set[str] | None = None,
+    login_event: threading.Event | None = None,
+    log=None,
 ) -> list[dict]:
     """
     약문약답 공고를 순회하여 raw posting dict 리스트를 반환.
@@ -55,10 +58,21 @@ def scrape(
     if existing_urls is None:
         existing_urls = set()
 
+    _log = log or (lambda msg: print(msg))
+
     driver = _build_driver(headless)
     try:
         driver.get(LOGIN_URL)
-        input('카카오 로그인을 완료하였으면 Enter를 누르세요.')
+        if login_event is not None:
+            _log('[로그인 대기] 카카오 로그인 후 "로그인 완료" 버튼을 눌러주세요.')
+            login_event.wait()
+            _log('[로그인 완료] 스크래핑을 시작합니다.')
+        else:
+            input('카카오 로그인을 완료하였으면 Enter를 누르세요.')
+
+        # 로그인 후 세션 초기화를 위해 메인 페이지 한 번 로드
+        driver.get(LOGIN_URL)
+        time.sleep(2)
 
         results = []
         for i in range(count):
@@ -66,15 +80,15 @@ def scrape(
             cur_url = BASE_URL + str(num_id)
 
             if cur_url in existing_urls:
-                print(f'{num_id} 번 글 - 중복 스킵')
+                _log(f'{num_id} 번 글 - 중복 스킵')
                 continue
 
             driver.get(cur_url)
-            driver.implicitly_wait(3)
+            time.sleep(1)
 
             try:
                 title_css = '#app > ion-app > main > section.title-container > h1'
-                title = WebDriverWait(driver, 5).until(
+                title = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, title_css))
                 ).text
                 title = PLATFORM + ') ' + title
@@ -118,10 +132,10 @@ def scrape(
                     'body': body,
                     'city': address,
                 })
-                print(f'{num_id} 번 글 수집 완료')
+                _log(f'{num_id} 번 글 수집 완료 | {title} | {name} | {address} | {cur_url}')
 
             except Exception as e:
-                print(f'{num_id} 번 글 없음: {e}')
+                _log(f'{num_id} 번 글 수집 실패: {e}')
 
     finally:
         driver.quit()

@@ -87,6 +87,14 @@
     radios.forEach(r => { if (r.checked) selected = r.value; });
     document.getElementById('yakdap-options').style.display = selected === 'yakdap' ? '' : 'none';
     document.getElementById('pharm-options').style.display = selected === 'pharm_recruit' ? '' : 'none';
+
+    const headlessCheckbox = document.getElementById('id_headless');
+    if (selected === 'yakdap') {
+      headlessCheckbox.checked = false;
+      headlessCheckbox.disabled = true;
+    } else {
+      headlessCheckbox.disabled = false;
+    }
   }
   document.querySelectorAll('input[name="source"]').forEach(r => {
     r.addEventListener('change', toggleOptions);
