@@ -91,7 +91,8 @@ def process_posting(
     if is_salary:
         _log(f'  [Task1] 급여 명시 ✓ | 유형: {wage_type or "미확인"} | 금액: {wage}만원 | 세후: {is_after_tax} | 일회성: {is_one_time}')
     else:
-        _log(f'  [Task1] 급여 미명시 | 일회성: {is_one_time}')
+        _log(f'  [Task1] 급여 미명시 → 저장 건너뜀')
+        return None
 
     # ── Task 2 또는 Task 3+4 분기 ────────────────────────────────
     if is_one_time:
@@ -170,7 +171,8 @@ def process_posting(
         result['net_hourly_wage'] = hourly_wage  # 임시; 세후 환산 후 덮어씌움
 
         if hourly_wage:
-            _log(f'  [검증] 주당 {hours_per_week:.1f}h / 시급(세전) {hourly_wage:.2f}만원')
+            tax_label = '세후' if is_after_tax else '세전'
+            _log(f'  [검증] 주당 {hours_per_week:.1f}h / 시급({tax_label}) {hourly_wage:.2f}만원')
 
         # 세후 월급 계산
         if is_salary and isinstance(wage, (int, float)) and result['hours_per_month']:

@@ -7,7 +7,10 @@
     postings = scrape(city_url_dict=CITY_URL_DICT['서울'], big_category='서울')
     # returns list[dict] — 각 dict는 JobPosting 생성에 필요한 raw 필드를 포함
 """
-import time
+import json
+import math
+from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -16,120 +19,40 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 PLATFORM = '팜리크루트'
 
+_URLS_FILE = Path(__file__).parent / 'pharm_recruit_urls.json'
+
 # city → list[url] 매핑. big_category 별로 그룹화.
-CITY_URL_DICT: dict[str, dict[str, list[str]]] = {
-    '서울': {
-        '서울-강남구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=138&keyword='],
-        '서울-강동구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=140&keyword='],
-        '서울-강북구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=124&keyword='],
-        '서울-강서구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=131&keyword='],
-        '서울-관악구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=136&keyword='],
-        '서울-광진구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=120&keyword='],
-        '서울-구로구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=132&keyword='],
-        '서울-금천구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=133&keyword='],
-        '서울-노원구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=126&keyword='],
-        '서울-도봉구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=125&keyword='],
-        '서울-동대문구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=121&keyword='],
-        '서울-동작구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=135&keyword='],
-        '서울-마포구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=129&keyword='],
-        '서울-서대문구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=128&keyword='],
-        '서울-서초구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=137&keyword='],
-        '서울-성동구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=119&keyword='],
-        '서울-성북구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=123&keyword='],
-        '서울-송파구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=139&keyword='],
-        '서울-양천구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=130&keyword='],
-        '서울-영등포구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=134&keyword='],
-        '서울-용산구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=118&keyword='],
-        '서울-은평구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=127&keyword='],
-        '서울-종로구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=116&keyword='],
-        '서울-중구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=117&keyword='],
-        '서울-중랑구': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=122&keyword='],
-    },
-    '인천': {
-        '인천': [
-            'http://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=100&keyword=',
-            'http://recruit.dailypharm.com/Search.php?page=2&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=100&keyword=',
-            'https://recruit.dailypharm.com/Search.php?page=3&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=100&keyword=',
-        ],
-    },
-    '지방': {
-        '부산': [
-            'https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=98&keyword=',
-            'https://recruit.dailypharm.com/Search.php?page=2&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=98&keyword=',
-        ],
-        '광주': [
-            'https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=101&keyword=',
-            'https://recruit.dailypharm.com/Search.php?page=2&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=101&keyword=',
-        ],
-        '대전': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=104&keyword='],
-        '울산': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=105&keyword='],
-        '세종': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=106&keyword='],
-        '강원': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=108&keyword='],
-        '충북': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=109&keyword='],
-        '충남': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=110&keyword='],
-        '전북': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=111&keyword='],
-        '전남': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=112&keyword='],
-        '경북': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=113&keyword='],
-        '경남': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=114&keyword='],
-        '제주': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=115&keyword='],
-    },
-    '경기 중부': {
-        '고양': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=4344&optionAreaVal%5B%5D=221&optionAreaVal%5B%5D=222&optionAreaVal%5B%5D=223&keyword='],
-        '양주': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=229&keyword='],
-        '의정부': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=224&keyword='],
-        '남양주': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=227&keyword='],
-        '구리': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=226&keyword='],
-        '하남': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=212&keyword='],
-        '경기도광주': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=217&keyword='],
-        '성남': ['https://recruit.dailypharm.com/Search.php?page=1&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=4317&optionAreaVal[]=197&optionAreaVal[]=195&optionAreaVal[]=196&keyword='],
-        '과천': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=207&keyword='],
-        '의왕': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=211&keyword='],
-        '안양': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=4336&optionAreaVal%5B%5D=199&optionAreaVal%5B%5D=198&keyword='],
-        '군포': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=210&keyword='],
-        '광명': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=205&keyword='],
-        '시흥': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=209&keyword='],
-        '부천': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=219&optionAreaVal%5B%5D=4908&optionAreaVal%5B%5D=4901&optionAreaVal%5B%5D=1729&keyword='],
-        '김포': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=215&keyword='],
-    },
-    '경기 외곽': {
-        '파주': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=228&keyword='],
-        '동두천': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=225&keyword='],
-        '연천': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=231&keyword='],
-        '포천': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=230&keyword='],
-        '가평': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=232&keyword='],
-        '양평': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=220&keyword='],
-        '여주': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=218&keyword='],
-        '이천': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=213&keyword='],
-        '안성': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=214&keyword='],
-        '용인': [
-            'https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=4338&optionAreaVal%5B%5D=203&optionAreaVal%5B%5D=204&optionAreaVal%5B%5D=202&keyword=',
-            'https://recruit.dailypharm.com/Search.php?page=2&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=4338&optionAreaVal[]=203&optionAreaVal[]=204&optionAreaVal[]=202&keyword=',
-        ],
-        '평택': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=206&keyword='],
-        '오산': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=208&keyword='],
-        '화성': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=216&keyword='],
-        '수원': [
-            'https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=4376&optionAreaVal%5B%5D=192&optionAreaVal%5B%5D=194&optionAreaVal%5B%5D=191&optionAreaVal%5B%5D=193&keyword=',
-            'https://recruit.dailypharm.com/Search.php?page=2&mode=offer&GraduateLevel=&employ_id=&optionJobVal[]=12&optionJobVal[]=13&optionJobVal[]=4776&optionAreaVal[]=4376&optionAreaVal[]=192&optionAreaVal[]=194&optionAreaVal[]=191&optionAreaVal[]=193&keyword=',
-        ],
-        '안산': ['https://recruit.dailypharm.com/Search.php?mode=offer&GraduateLevel=&employ_id=&optionJobVal%5B%5D=12&optionJobVal%5B%5D=13&optionJobVal%5B%5D=4776&optionAreaVal%5B%5D=201&optionAreaVal%5B%5D=200&keyword='],
-    },
-}
+# URL은 scraper/pharm_recruit_urls.json 에서 관리합니다.
+with _URLS_FILE.open(encoding='utf-8') as _f:
+    CITY_URL_DICT: dict[str, dict[str, list[str]]] = json.load(_f)
+
+
+def _build_page_url(base_url: str, page: int) -> str:
+    parsed = urlparse(base_url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params['page'] = [str(page)]
+    new_query = urlencode({k: v[0] for k, v in params.items()})
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def scrape(
     big_category: str,
+    year: int = 2026,
     headless: bool = False,
     existing_urls: set[str] | None = None,
+    category_limit: int | None = None,
     log=None,
 ) -> list[dict]:
     """
     팜리크루트 공고를 순회하여 raw posting dict 리스트를 반환.
 
     Args:
-        big_category:  수집할 지역 대분류 (CITY_URL_DICT의 키)
-        headless:      헤드리스 모드 여부
-        existing_urls: 이미 DB에 존재하는 URL 집합 (중복 스킵용)
+        big_category:    수집할 지역 대분류 (CITY_URL_DICT의 키)
+        headless:        헤드리스 모드 여부
+        existing_urls:   이미 DB에 존재하는 URL 집합 (중복 스킵용)
+        category_limit:  이 카테고리에서 수집할 최대 공고 수 (None = 전체)
+                         내부적으로 도시 수로 나눠 균등 분배.
+        year:            등록일 연도 (팜리크루트는 월/일만 표시되므로 별도 지정 필요)
 
     Returns:
         list of dict with keys:
@@ -145,6 +68,14 @@ def scrape(
 
     city_url_dict = CITY_URL_DICT[big_category]
 
+    # 도시별 수집 한도: category_limit을 도시 수로 균등 분배 (올림)
+    num_cities = len(city_url_dict)
+    if category_limit is not None:
+        city_limit = math.ceil(category_limit / num_cities)
+        _log(f'[{big_category}] 도시 {num_cities}개 × 최대 {city_limit}개/도시 (카테고리 한도 {category_limit}개)')
+    else:
+        city_limit = None
+
     options = webdriver.ChromeOptions()
     if headless:
         options.add_argument('headless')
@@ -154,72 +85,102 @@ def scrape(
     results = []
     try:
         for city, url_list in city_url_dict.items():
-            for url in url_list:
-                _log(f'페이지: {city} — {url}')
-                driver.get(url)
-                driver.implicitly_wait(3)
+            city_collected = 0
+            city_done = False
 
-                for n in range(1, 41):
-                    try:
-                        child_css = (
-                            '#container > div.searchPageWrap > div > div.search_tab.clearfix'
-                            f' > ul > li:nth-child({n}) > a > div > div.search_tabCont_info.clearfix'
-                        )
-                        child = driver.find_element(By.CSS_SELECTOR, child_css)
-                        child.click()
-                        driver.implicitly_wait(3)
+            for base_url in url_list:
+                if city_done:
+                    break
+                page = 0
+                while True:
+                    url = _build_page_url(base_url, page)
+                    _log(f'페이지: {city} — page={page} — {url}')
+                    driver.get(url)
+                    driver.implicitly_wait(3)
 
-                        cur_url = driver.current_url
-                        if cur_url in existing_urls:
-                            driver.back()
-                            driver.implicitly_wait(5)
-                            continue
-
-                        name_css = '#container > div.recruitView_wrap > div.firstView.OfferViewWarp > div.offer_title_wrap > h1'
-                        name = WebDriverWait(driver, 3).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, name_css))
-                        ).text
-
-                        title_css = '#container > div.recruitView_wrap > div.firstView.OfferViewWarp > div.offer_title_wrap > h2'
-                        title = driver.find_element(By.CSS_SELECTOR, title_css).text
-
-                        date_css = '#container > div.recruitView_wrap > div.secondView > div.secondViewbody > div.buttonSection > p'
-                        date_text = driver.find_element(By.CSS_SELECTOR, date_css).text
-                        year = date_text.split('년')[0].split()[-1][1:]
-                        month = date_text.split('월')[0].split()[-1].zfill(2)
-                        day = date_text.split('일')[1].split()[-1].zfill(2)
-                        created_at = f'{year}-{month}-{day}'
-
-                        driver.switch_to.frame(0)
-                        time.sleep(1)
-                        body_text = driver.find_element(By.CSS_SELECTOR, 'html').text
-                        driver.switch_to.default_content()
-
-                        body = f'공고제목 :{title}\n{body_text}'
-
-                        results.append({
-                            'url': cur_url,
-                            'platform': PLATFORM,
-                            'created_at': created_at,
-                            'title': title,
-                            'pharmacy_name': name,
-                            'body': body,
-                            'city': city,
-                            'big_category': big_category,
-                        })
-                        _log(f'  {city} - {n}번 글 수집 완료 | {title} | {name} | {cur_url}')
-
-                        driver.back()
-                        driver.implicitly_wait(5)
-
-                    except Exception as e:
-                        _log(f'  {city} - {n}번 글 없음: {e}')
+                    found_on_page = 0
+                    for n in range(1, 41):
                         try:
-                            driver.switch_to.default_content()
+                            child_css = (
+                                '#container > div.offer_wrap.contWidth.width100'
+                                f' > ul > li:nth-child({n}) > div.tit_wrap > div.tit > a'
+                            )
+                            child = driver.find_element(By.CSS_SELECTOR, child_css)
+                            child.click()
+                            driver.implicitly_wait(3)
+
+                            cur_url = driver.current_url
+                            if cur_url in existing_urls:
+                                driver.back()
+                                driver.implicitly_wait(5)
+                                found_on_page += 1
+                                continue
+
+                            name_css = (
+                                '#container > div > div.view_wrap > div.viewCont_wrap.sideIdxTop'
+                                ' > div.top_wrap > div.tit_wrap > div.company'
+                            )
+                            name = WebDriverWait(driver, 3).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, name_css))
+                            ).text
+
+                            title_css = (
+                                '#container > div > div.view_wrap > div.viewCont_wrap.sideIdxTop'
+                                ' > div.top_wrap > div.tit_wrap > div.tit'
+                            )
+                            title = driver.find_element(By.CSS_SELECTOR, title_css).text
+
+                            date_css = (
+                                '#container > div > div.view_wrap > div.viewCont_wrap.sideIdxTop'
+                                ' > div.cont_wrap > div.contDiv.step.sideIdxTop'
+                                ' > div.flexBox > div.flexL.date_wrap > div:nth-child(1) > span:nth-child(2)'
+                            )
+                            date_text = driver.find_element(By.CSS_SELECTOR, date_css).text
+                            # date_text 형식: '03.14(토)'
+                            month = date_text.split('.')[0].zfill(2)
+                            day = date_text.split('.')[1].split('(')[0].zfill(2)
+                            created_at = f'{year}-{month}-{day}'
+
+                            body_css = (
+                                '#container > div > div.view_wrap > div.viewCont_wrap.sideIdxTop'
+                                ' > div.cont_wrap > div.contDiv.detail > div.ck-content'
+                            )
+                            body_text = driver.find_element(By.CSS_SELECTOR, body_css).text
+
+                            body = f'공고제목 :{title}\n{body_text}'
+
+                            results.append({
+                                'url': cur_url,
+                                'platform': PLATFORM,
+                                'created_at': created_at,
+                                'title': title,
+                                'pharmacy_name': name,
+                                'body': body,
+                                'city': city,
+                                'big_category': big_category,
+                            })
+                            city_collected += 1
+                            found_on_page += 1
+                            _log(f'  {city} - {n}번 글 수집 완료 ({city_collected}/{city_limit or "∞"}) | {title} | {name} | {cur_url}')
+
                             driver.back()
                             driver.implicitly_wait(5)
+
+                            if city_limit is not None and city_collected >= city_limit:
+                                city_done = True
+                                break  # for n
+
                         except Exception:
-                            pass
+                            # 공고 목록은 순차적이므로 첫 실패 = 이 페이지에 더 이상 공고 없음
+                            break
+
+                    if city_done or found_on_page == 0:
+                        if found_on_page == 0:
+                            _log(f'  {city} — page={page} 공고 없음, 다음 지역으로')
+                        break  # while True
+
+                    page += 1
+
     finally:
         driver.quit()
 

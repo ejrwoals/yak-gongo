@@ -19,10 +19,10 @@ _login_events: dict[int, threading.Event] = {}
 class JobPostingAdmin(admin.ModelAdmin):
     list_display = (
         'title_short', 'platform', 'big_category', 'city',
-        'net_hourly_wage', 'created_at', 'user_reviewed', 'has_error',
+        'hourly_wage_display', 'created_at', 'user_reviewed', 'has_error',
     )
     list_display_links = ('title_short',)
-    list_filter = ('big_category', 'platform', 'has_error', 'error_corrected', 'user_reviewed', 'is_one_time_work')
+    list_filter = ('big_category', 'platform', 'has_error', 'error_corrected', 'user_reviewed', 'is_one_time_work', 'is_salary_disclosed')
     search_fields = ('title', 'pharmacy_name', 'city', 'url')
     ordering = ('-created_at',)
     list_per_page = 50
@@ -64,6 +64,12 @@ class JobPostingAdmin(admin.ModelAdmin):
     @admin.display(description='공고 제목')
     def title_short(self, obj):
         return obj.title[:45] if obj.title else '-'
+
+    @admin.display(description='NET HOURLY WAGE')
+    def hourly_wage_display(self, obj):
+        if obj.is_one_time_work:
+            return obj.one_time_hourly_wage if obj.one_time_hourly_wage is not None else '-'
+        return obj.net_hourly_wage if obj.net_hourly_wage is not None else '-'
 
 
 @admin.register(PipelineRun)
@@ -109,8 +115,8 @@ class PipelineRunAdmin(admin.ModelAdmin):
                 'start_id': 38800,
                 'count': 100,
                 'step': 2,
-                'year': 2024,
-                'big_category': '서울',
+                'year': 2026,
+                'big_categories': ['서울'],
                 'headless': True,
             })
 

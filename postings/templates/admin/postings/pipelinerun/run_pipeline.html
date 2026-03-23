@@ -45,23 +45,34 @@
         <label>{{ form.step.label }}:</label>
         {{ form.step }}
       </div>
-      <div class="form-row field-year">
-        <label>{{ form.year.label }}:</label>
-        {{ form.year }}
-      </div>
     </fieldset>
 
     <fieldset class="module aligned" id="pharm-options" style="display:none;">
       <h2>팜리크루트 옵션</h2>
-      <div class="form-row field-big_category">
-        <label>{{ form.big_category.label }}:</label>
-        {{ form.big_category }}
-        <p class="help">{{ form.big_category.help_text }}</p>
+      <div class="form-row field-big_categories">
+        <label>{{ form.big_categories.label }}:</label>
+        <div>
+          {% for checkbox in form.big_categories %}
+            <label style="display:block; margin-bottom:4px;">
+              {{ checkbox.tag }} {{ checkbox.choice_label }}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-row field-pharm_count">
+        <label>{{ form.pharm_count.label }}:</label>
+        {{ form.pharm_count }}
+        <p class="help">{{ form.pharm_count.help_text }}</p>
       </div>
     </fieldset>
 
     <fieldset class="module aligned">
       <h2>공통 옵션</h2>
+      <div class="form-row field-year">
+        <label>{{ form.year.label }}:</label>
+        {{ form.year }}
+        <p class="help">{{ form.year.help_text }}</p>
+      </div>
       <div class="form-row">
         <label>{{ form.headless.label }}: {{ form.headless }}</label>
         <p class="help">{{ form.headless.help_text }}</p>

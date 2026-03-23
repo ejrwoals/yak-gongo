@@ -5,7 +5,7 @@ yakdap 예시:
     python manage.py run_pipeline --source yakdap --start-id 38800 --count 100 --step 2 --year 2024
 
 pharm_recruit 예시:
-    python manage.py run_pipeline --source pharm_recruit --big-category 서울
+    python manage.py run_pipeline --source pharm_recruit --big-category 서울 --year 2026
 """
 import io
 import sys
@@ -33,7 +33,9 @@ class Command(BaseCommand):
         parser.add_argument('--step', type=int, default=2)
         parser.add_argument('--year', type=int, default=2024)
         # pharm_recruit 전용
-        parser.add_argument('--big-category', type=str, default='서울')
+        parser.add_argument('--big-category', type=str, nargs='+', default=['서울'])
+        parser.add_argument('--pharm-count', type=int, default=None,
+                            help='팜리크루트 수집 개수 한도 (None=전체). 선택 지역·도시 별로 균등 분배.')
         # 공통
         parser.add_argument('--headless', action='store_true', default=False)
         parser.add_argument('--dry-run', action='store_true', default=False,
@@ -79,13 +81,27 @@ class Command(BaseCommand):
                 log=_scrape_log,
             )
         else:
+            import math as _math
             from scraper.pharm_recruit import scrape
-            raw_postings = scrape(
-                big_category=options['big_category'],
-                headless=options['headless'],
-                existing_urls=existing_urls,
-                log=_scrape_log,
+            big_categories = options.get('big_categories') or options.get('big_category') or ['서울']
+            if isinstance(big_categories, str):
+                big_categories = [big_categories]
+            pharm_count = options.get('pharm_count')
+            per_category = (
+                _math.ceil(pharm_count / len(big_categories)) if pharm_count else None
             )
+            raw_postings = []
+            for big_cat in big_categories:
+                limit_msg = f' (최대 {per_category}개)' if per_category else ' (전체)'
+                _scrape_log(f'[{big_cat}] 스크래핑 시작{limit_msg}')
+                raw_postings += scrape(
+                    big_category=big_cat,
+                    year=options['year'],
+                    headless=options['headless'],
+                    existing_urls=existing_urls,
+                    category_limit=per_category,
+                    log=_scrape_log,
+                )
 
         self.stdout.write(f'스크래핑 완료: {len(raw_postings)}개')
 
@@ -149,6 +165,7 @@ class Command(BaseCommand):
 
         total_processed = 0
         total_errors = 0
+        total_skipped_no_salary = 0
 
         for idx, raw in enumerate(raw_postings, start=1):
             url = raw['url']
@@ -184,6 +201,12 @@ class Command(BaseCommand):
                 if captured_text.strip():
                     _log(f'[stdout] {captured_text.strip()}')
 
+            if pipeline_result is None:
+                total_skipped_no_salary += 1
+                _log('  → 급여 미명시, 저장 건너뜀')
+                _flush_log()
+                continue
+
             # 지역 정규화
             city_raw = raw.get('city', '')
             city = normalize_city(city_raw) or city_raw
@@ -216,11 +239,14 @@ class Command(BaseCommand):
         # ── 완료 처리 ─────────────────────────────────────────────
         _log(f'\n{"="*40}')
         _log(f'완료: {total_processed}개 저장, {total_errors}개 에러')
+        if total_skipped_no_salary:
+            _log(f'{total_skipped_no_salary}개 급여 미명시 건너뜀')
         run.finished_at = timezone.now()
         run.status = 'done'
         _flush_log(force=True)
         run.save()
 
         self.stdout.write(
-            self.style.SUCCESS(f'완료: {total_processed}개 저장, {total_errors}개 에러')
+            self.style.SUCCESS(f'완료: {total_processed}개 저장, {total_errors}개 에러' +
+                               (f', {total_skipped_no_salary}개 급여 미명시 건너뜀' if total_skipped_no_salary else ''))
         )

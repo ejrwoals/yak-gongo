@@ -53,7 +53,8 @@ yak-gongo/
 │
 ├── scraper/                 # 웹 스크래퍼 (Selenium)
 │   ├── yakdap.py            # 약문약답 스크래퍼
-│   └── pharm_recruit.py     # 팜리크루트 스크래퍼 + 지역-URL 매핑
+│   ├── pharm_recruit.py     # 팜리크루트 스크래퍼 (자동 페이지네이션)
+│   └── pharm_recruit_urls.json  # 팜리크루트 지역-URL 매핑 데이터
 │
 ├── geo/
 │   └── mapping.py           # 주소 → 지역코드, 지역 대분류 변환
@@ -173,12 +174,20 @@ python manage.py run_pipeline \
 ```bash
 python manage.py run_pipeline \
     --source pharm_recruit \
-    --big-category 서울
+    --big-category 서울 인천 \
+    --pharm-count 50 \
+    --year 2026
 ```
+
+| 옵션 | 설명 | 기본값 |
+|---|---|---|
+| `--big-category` | 수집할 지역 대분류 (복수 지정 가능) | `서울` |
+| `--pharm-count` | 수집 개수 한도. 선택 지역/도시별로 균등 분배 | 전체 |
+| `--year` | 등록일 연도 (팜리크루트는 월/일만 표시됨) | `2024` |
 
 `--big-category`에 가능한 값: `서울`, `인천`, `경기 중부`, `경기 외곽`, `지방`
 
-각 대분류에 포함되는 세부 지역은 `scraper/pharm_recruit.py`의 `CITY_URL_DICT`에 정의되어 있다.
+각 대분류에 포함되는 세부 지역은 `scraper/pharm_recruit_urls.json`에 정의되어 있다.
 
 ### 공통 옵션
 
@@ -197,6 +206,7 @@ python manage.py run_pipeline \
     ↓
 LLM 파이프라인 (Gemini API, 공고당 최대 5회 호출)
     ├─ Task 1: 급여 유형·금액, 일회성 여부
+    │     └─ 급여 미명시 → 저장 건너뜀 (None 반환)
     ├─ Task 2: 일회성 근무 시급 계산 (일회성인 경우)
     ├─ Task 3: 평일·주말 출퇴근 시각 추출 (지속성인 경우)
     ├─ Task 4: Task 3 결과 검증·수정
@@ -244,7 +254,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 **Postings > Job postings** 클릭.
 
-- **필터** (우측 사이드바): 지역 대분류, 플랫폼, 에러 여부, 검토 여부, 일회성/지속성
+- **필터** (우측 사이드바): 지역 대분류, 플랫폼, 에러 여부, 검토 여부, 일회성/지속성, 급여 명시 여부
 - **검색**: 공고 제목, 약국 이름, 지역, URL
 - **`검토 완료` 체크박스**: 목록에서 바로 체크·저장 가능 (별도 페이지 이동 불필요)
 - **에러 공고 필터링**: `has_error = True`로 필터 → LLM이 의심스럽다고 판단한 공고만 모아서 검토
@@ -321,7 +331,8 @@ result = process_posting(body="...", client=client, model_name=settings.LLM_MODE
 | 파일 | 역할 |
 |---|---|
 | `yakdap.py` | `scrape(start_id, count, step, year, ...)` → `list[dict]` |
-| `pharm_recruit.py` | `scrape(big_category, ...)` → `list[dict]`, `CITY_URL_DICT` 내장 |
+| `pharm_recruit.py` | `scrape(big_category, ...)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원 |
+| `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑) |
 
 반환 dict의 키: `url`, `platform`, `created_at`, `title`, `pharmacy_name`, `body`, `city`, `big_category`
 

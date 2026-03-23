@@ -49,7 +49,9 @@ def extract_json(response: str | None) -> tuple[dict | None, str | None]:
     # JS 스타일 주석 제거
     json_string = re.sub(r'//.*?(?=\n)|/\*.*?\*/', '', json_string, flags=re.S)
     try:
-        return json.loads(json_string), json_string
+        # raw_decode: 첫 번째 유효한 JSON 객체만 파싱하고 뒤의 텍스트는 무시
+        obj, _ = json.JSONDecoder().raw_decode(json_string)
+        return obj, json_string
     except json.JSONDecodeError as e:
         print(f'[JSON PARSE ERROR] {e}\n{json_string[:200]}')
         return None, json_string
