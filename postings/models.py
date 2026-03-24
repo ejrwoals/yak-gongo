@@ -47,7 +47,6 @@ class JobPosting(models.Model):
 
     # --- Quality / audit flags ---
     has_error = models.BooleanField(default=False)
-    error_corrected = models.BooleanField(default=False)
     user_reviewed = models.BooleanField(default=False, verbose_name='관리자 리뷰')
     user_comment = models.TextField(blank=True)
 
@@ -62,10 +61,33 @@ class JobPosting(models.Model):
 
     def save(self, *args, **kwargs):
         self.has_error = bool(self.gpt_error_log)
+        # hours_per_week가 없으면 근무 시간 정보로 자동 계산
+        if self.hours_per_week is None:
+            weekday_h = None
+            weekend_h = None
+            if self.weekday_start_time is not None and self.weekday_end_time is not None and self.weekday_work_days is not None:
+                weekday_h = (self.weekday_end_time - self.weekday_start_time) * self.weekday_work_days
+            if self.weekend_start_time is not None and self.weekend_end_time is not None and self.weekend_work_days is not None:
+                weekend_h = (self.weekend_end_time - self.weekend_start_time) * self.weekend_work_days
+            total = (weekday_h or 0) + (weekend_h or 0)
+            if weekday_h is not None or weekend_h is not None:
+                self.hours_per_week = total
         super().save(*args, **kwargs)
+        # user_reviewed=True면 AdminCheck 레코드 자동 생성
+        if self.user_reviewed:
+            AdminCheck.objects.get_or_create(posting=self)
 
     def __str__(self):
         return f"[{self.platform}] {self.title[:40]}"
+
+
+class AdminCheck(models.Model):
+    """관리자가 검토 완료한 공고 기록. 레코드 존재 = 검토 완료, 없음 = 미검토."""
+    posting = models.OneToOneField(JobPosting, on_delete=models.CASCADE, related_name='admin_check')
+    checked_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"checked: {self.posting_id}"
 
 
 class PipelineRun(models.Model):

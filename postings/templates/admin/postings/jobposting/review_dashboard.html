@@ -33,7 +33,7 @@
     <button id="sort-toggle" title="정렬 방향 전환">ASC</button>
   </div>
   <div class="controls-right">
-    <button id="bulk-mark-reviewed" style="display:none;">선택 항목 리뷰 완료 (<span id="selected-count">0</span>건)</button>
+    <button id="bulk-mark-reviewed" style="display:none;">선택 항목 AdminCheck (<span id="selected-count">0</span>건)</button>
   </div>
 </div>
 
@@ -108,10 +108,11 @@
     padding: 3px 8px; border: 1px solid #999; background: #fff; border-radius: 3px;
     cursor: pointer; font-size: 11px; text-decoration: none; color: #333; margin-right: 2px;
   }
-  .btn-save { border-color: #417690; color: #417690; }
-  .btn-save:hover { background: #417690; color: #fff; }
-  .btn-mark-reviewed { border-color: #28a745; color: #28a745; }
-  .btn-mark-reviewed:hover { background: #28a745; color: #fff; }
+  .btn-save { border-color: #ccc; color: #aaa; cursor: default; }
+  .btn-save.dirty { border-color: #28a745 !important; background: #28a745 !important; color: #fff !important; font-weight: bold; cursor: pointer; }
+  .btn-save.dirty:hover { background: #218838 !important; border-color: #218838 !important; }
+  .btn-mark-reviewed { border-color: #28a745 !important; background: #28a745 !important; color: #fff !important; font-weight: bold; }
+  .btn-mark-reviewed:hover { background: #218838; border-color: #218838; }
   .btn-expand { border-color: #6c757d; color: #6c757d; }
   .btn-expand:hover { background: #6c757d; color: #fff; }
   .btn-link { border-color: #fd7e14; color: #fd7e14; }
@@ -128,8 +129,8 @@
   .detail-panels { display: flex; flex-direction: column; gap: 12px; }
   .detail-panel { }
   .detail-pre {
-    background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px;
-    font-size: 12px; line-height: 1.5; max-height: 250px; overflow-y: auto;
+    background: #fafafa; color: #333; border: 1px solid #e0e0e0; padding: 10px; border-radius: 4px;
+    font-family: inherit; font-size: 13px; line-height: 1.7; max-height: 250px; overflow-y: auto;
     white-space: pre-wrap; word-break: break-all; margin-top: 4px;
   }
   .expand-edit-grid {
@@ -281,6 +282,7 @@
         container.innerHTML = html;
         container.style.opacity = '1';
         updateSelectionCount();
+        initDirtyTracking();
       })
       .catch(err => {
         container.innerHTML = '<p style="color:red; text-align:center;">데이터 로드 실패</p>';
@@ -346,6 +348,32 @@
     markReviewed(pks);
   });
 
+  // dirty 추적 초기화 (데이터 로드 후 호출)
+  function initDirtyTracking() {
+    document.querySelectorAll('.edit-field').forEach(el => {
+      el.dataset.original = el.type === 'checkbox' ? String(el.checked) : el.value;
+    });
+  }
+
+  function checkDirty(pk) {
+    let dirty = false;
+    document.querySelectorAll(`.edit-field[data-pk="${pk}"]`).forEach(el => {
+      const current = el.type === 'checkbox' ? String(el.checked) : el.value;
+      if (current !== el.dataset.original) dirty = true;
+    });
+    const saveBtn = document.querySelector(`.btn-save[data-pk="${pk}"]`);
+    if (saveBtn) saveBtn.classList.toggle('dirty', dirty);
+  }
+
+  document.getElementById('table-container').addEventListener('input', function(e) {
+    const field = e.target.closest('.edit-field');
+    if (field) checkDirty(field.dataset.pk);
+  });
+  document.getElementById('table-container').addEventListener('change', function(e) {
+    const field = e.target.closest('.edit-field');
+    if (field) checkDirty(field.dataset.pk);
+  });
+
   // 저장
   function saveRow(pk) {
     const fields = {};
@@ -372,10 +400,15 @@
           if (row) {
             row.classList.add('save-success');
             setTimeout(() => row.classList.remove('save-success'), 700);
-            // 리뷰 완료 시 행 스타일 업데이트
             if (fields.user_reviewed === true) {
               row.classList.add('reviewed');
             }
+            // dirty 초기화
+            row.querySelectorAll('.edit-field').forEach(el => {
+              el.dataset.original = el.type === 'checkbox' ? String(el.checked) : el.value;
+            });
+            const saveBtn = row.querySelector(`.btn-save[data-pk="${pk}"]`);
+            if (saveBtn) saveBtn.classList.remove('dirty');
           }
           loadCounts();
         } else {
@@ -413,8 +446,14 @@
   // 상세 토글
   function toggleDetail(pk) {
     const detailRow = document.querySelector(`tr.detail-row[data-pk="${pk}"]`);
-    if (detailRow) {
-      detailRow.style.display = detailRow.style.display === 'none' ? '' : 'none';
+    if (!detailRow) return;
+    const isHidden = detailRow.style.display === 'none';
+    detailRow.style.display = isHidden ? '' : 'none';
+    if (isHidden && !detailRow.dataset.highlighted) {
+      detailRow.querySelectorAll('.detail-pre').forEach(el => {
+        el.innerHTML = el.textContent.replace(/세전/g, '<mark style="background:#ffe066;padding:0 2px;border-radius:2px;">세전</mark>');
+      });
+      detailRow.dataset.highlighted = '1';
     }
   }
 

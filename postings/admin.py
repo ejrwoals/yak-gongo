@@ -13,7 +13,7 @@ from django.utils.html import format_html
 from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilder
 
 from .forms import PipelineRunForm
-from .models import JobPosting, PipelineRun
+from .models import AdminCheck, JobPosting, PipelineRun
 from .review_presets import (
     FIELD_META,
     REVIEW_PRESETS,
@@ -39,7 +39,7 @@ class JobPostingAdmin(admin.ModelAdmin):
     list_filter = (
         ('created_at', DateRangeFilterBuilder(title='공고 날짜')),
         'is_salary_disclosed', 'is_one_time_work', 'platform', 'big_category',
-        'has_error', 'user_reviewed', 'error_corrected',
+        'has_error', 'user_reviewed',
         ('net_hourly_wage', NumericRangeFilterBuilder(title='시급(세후)')),
     )
     search_fields = ('title', 'pharmacy_name', 'city', 'url')
@@ -72,7 +72,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
         ('검토 / 품질', {
-            'fields': ('has_error', 'error_corrected', 'user_reviewed', 'user_comment'),
+            'fields': ('has_error', 'user_reviewed', 'user_comment'),
         }),
         ('원문', {
             'fields': ('body',),
@@ -275,7 +275,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             converted = self._convert_value(value, meta['type'])
             setattr(posting, field_name, converted)
 
-        posting.save()
+        posting.save()  # save()가 user_reviewed=True면 AdminCheck 자동 생성
         return JsonResponse({'ok': True})
 
     def review_mark_view(self, request):
@@ -291,7 +291,10 @@ class JobPostingAdmin(admin.ModelAdmin):
         if not pks:
             return JsonResponse({'ok': False, 'error': 'pks required'}, status=400)
 
-        count = JobPosting.objects.filter(pk__in=pks).update(user_reviewed=True)
+        existing = set(AdminCheck.objects.filter(posting_id__in=pks).values_list('posting_id', flat=True))
+        new_checks = [AdminCheck(posting_id=pk) for pk in pks if pk not in existing]
+        AdminCheck.objects.bulk_create(new_checks)
+        count = len(new_checks)
         return JsonResponse({'ok': True, 'count': count})
 
     def review_counts_view(self, request):
@@ -350,11 +353,27 @@ class PipelineRunAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom = [
             path('run/', self.admin_site.admin_view(self.run_pipeline_view), name='pipelinerun_run'),
+            path('run-statistics/', self.admin_site.admin_view(self.run_statistics_view), name='pipelinerun_run_statistics'),
             path('log/<int:run_id>/', self.admin_site.admin_view(self.run_log_view), name='pipelinerun_log'),
             path('status/<int:run_id>/', self.admin_site.admin_view(self.run_status_view), name='pipelinerun_status'),
             path('confirm-login/<int:run_id>/', self.admin_site.admin_view(self.confirm_login_view), name='pipelinerun_confirm_login'),
         ]
         return custom + urls
+
+    def run_statistics_view(self, request):
+        """백그라운드에서 run_statistics 실행 후 목록으로 복귀."""
+        def _target():
+            django.db.close_old_connections()
+            try:
+                call_command('run_statistics')
+            except Exception:
+                pass
+            finally:
+                django.db.close_old_connections()
+
+        threading.Thread(target=_target, daemon=True).start()
+        self.message_user(request, '통계 생성을 백그라운드에서 시작했습니다. 잠시 후 Notion 페이지를 확인하세요.')
+        return redirect('../')
 
     def run_pipeline_view(self, request):
         """파이프라인 실행 폼 페이지."""
@@ -468,3 +487,12 @@ def _start_pipeline_thread(run_id: int, kwargs: dict):
 
     t = threading.Thread(target=_target, daemon=True)
     t.start()
+
+
+@admin.register(AdminCheck)
+class AdminCheckAdmin(admin.ModelAdmin):
+    list_display = ('posting', 'checked_at')
+    list_filter = (('checked_at', DateRangeFilterBuilder(title='검토 일시')),)
+    ordering = ('-checked_at',)
+    readonly_fields = ('posting', 'checked_at')
+

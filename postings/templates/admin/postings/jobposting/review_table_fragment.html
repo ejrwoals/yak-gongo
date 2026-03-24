@@ -43,9 +43,6 @@
       {% endfor %}
       <td class="actions-cell">
         <button class="btn-save" data-pk="{{ row.pk }}" title="저장">저장</button>
-        {% if not row.user_reviewed %}
-        <button class="btn-mark-reviewed" data-pk="{{ row.pk }}" title="리뷰 완료 (수정 없이 통과)">확인</button>
-        {% endif %}
         {% if has_expandable %}
         <button class="btn-expand" data-pk="{{ row.pk }}" title="상세보기">상세</button>
         {% endif %}
@@ -58,12 +55,6 @@
     <tr class="detail-row" data-pk="{{ row.pk }}" style="display:none;">
       <td colspan="{{ total_cols }}">
         <div class="detail-panels">
-          {% for field, info in row.expandable_readonly.items %}
-          <div class="detail-panel">
-            <strong>{{ info.label }}:</strong>
-            <pre class="detail-pre">{{ info.value }}</pre>
-          </div>
-          {% endfor %}
           {% if row.expandable_edit %}
           <div class="detail-panel edit-panel">
             <strong>편집 필드:</strong>
@@ -89,6 +80,12 @@
             </div>
           </div>
           {% endif %}
+          {% for field, info in row.expandable_readonly.items %}
+          <div class="detail-panel">
+            <strong>{{ info.label }}:</strong>
+            <pre class="detail-pre">{{ info.value }}</pre>
+          </div>
+          {% endfor %}
         </div>
       </td>
     </tr>

@@ -17,10 +17,11 @@
 4. [공고 수집 및 처리 (run_pipeline)](#공고-수집-및-처리)
 5. [Django Admin 리뷰 워크플로우](#django-admin-리뷰-워크플로우)
 6. [통계 대시보드](#통계-대시보드)
-7. [모듈별 설명](#모듈별-설명)
-8. [LLM 파이프라인 상세](#llm-파이프라인-상세)
-9. [데이터 모델](#데이터-모델)
-10. [일회성 데이터 마이그레이션](#일회성-데이터-마이그레이션)
+7. [Notion 통계 생성](#notion-통계-생성)
+8. [모듈별 설명](#모듈별-설명)
+9. [LLM 파이프라인 상세](#llm-파이프라인-상세)
+10. [데이터 모델](#데이터-모델)
+11. [일회성 데이터 마이그레이션](#일회성-데이터-마이그레이션)
 
 ---
 
@@ -33,12 +34,14 @@ yak-gongo/
 │   └── urls.py
 │
 ├── postings/                # 핵심 앱: 공고 DB + Admin
-│   ├── models.py            # JobPosting, PipelineRun
+│   ├── models.py            # JobPosting, AdminCheck, PipelineRun
 │   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI
+│   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼)
 │   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
-│   │   └── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
+│   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
+│   │   └── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
 │   └── templates/admin/postings/pipelinerun/
 │       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
 │       ├── run_pipeline.html# 실행 옵션 폼 페이지
@@ -65,6 +68,9 @@ yak-gongo/
 │   ├── urls.py
 │   └── templates/stats/
 │       └── dashboard.html   # 통계 대시보드 페이지
+│
+├── notion-stats/            # Notion 연동 통계 (차트 생성 + Notion 업로드)
+│   └── one_click_statistics.py  # 30종 이상 차트 생성 및 Notion 페이지 업데이트
 │
 ├── legacy-files/               # 과거 프로젝트 파일 (레거시)
 │   └── one-time-data-migration/
@@ -150,9 +156,13 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # LLM API
 GOOGLE_API_KEY=your-google-api-key       # Gemini API (필수)
 LLM_MODEL=gemini-2.5-flash               # 사용할 Gemini 모델
+
+# Notion 통계 업로드 (run_statistics 커맨드 사용 시 필요)
+NOTION_TOKEN=your-notion-integration-token
 ```
 
-**GOOGLE_API_KEY** 발급: [Google AI Studio](https://aistudio.google.com/) → 'Get API key'
+- **GOOGLE_API_KEY** 발급: [Google AI Studio](https://aistudio.google.com/) → 'Get API key'
+- **NOTION_TOKEN** 발급: [Notion Integrations](https://www.notion.so/my-integrations) → 내부 통합 생성 후 토큰 복사
 
 ---
 
@@ -287,6 +297,25 @@ http://localhost:8000/admin/ 접속 후 사용.
 | 검토 / 품질 | 에러 여부, 에러 교정 완료, 검토 완료, 개인 코멘트 |
 | 원문 | 공고 본문 전체 (접기/펼치기) |
 
+### 리뷰 대시보드 (프리셋 기반)
+
+**Postings > Job postings** 상단의 **리뷰 대시보드** 링크로 진입. 단계별 프리셋 탭이 제공되며, 각 탭은 특정 검토 시나리오에 맞는 필터·컬럼·인라인 편집 필드를 자동 구성한다.
+
+| 단계 | 탭 이름 | 필터 조건 |
+|---|---|---|
+| 1단계: 사전 점검 | 급여 미공개 | `is_salary_disclosed=False` & `AdminCheck` 미존재 |
+| 2단계: 에러 검토 | 에러 미검토 | `has_error=True` & `AdminCheck` 미존재 |
+| 3단계: 비에러 이상치 | 근무일 이상치 | 평일 근무일 < 0 또는 > 5 또는 비정수(소수점), 주말 근무일이 0.5/1/2 외 |
+| 3단계: 비에러 이상치 | 일회성 시급 검토 | 일회성 근무이면서 시급 null / < 2.5 / > 4.0 |
+| 3단계: 비에러 이상치 | 지속성 시급 검토 | 지속성 근무이면서 시급/월급 null 또는 시급 < 2.0 / > 4.0 |
+| 3단계: 비에러 이상치 | 세전 확인 | 지속성 근무이면서 본문에 "세전" 포함 |
+| 3단계: 비에러 이상치 | 지역 미분류 | `city`가 빈 문자열 |
+| 최종 점검 | 리뷰완료/코멘트 누락 | 리뷰 완료인데 코멘트 누락, 또는 미리뷰인데 코멘트 있음 |
+
+3단계 탭들은 `has_error=False` & `AdminCheck` 미존재인 공고만 대상으로 한다.
+
+프리셋 정의는 `postings/review_presets.py`의 `REVIEW_PRESETS`에서 관리한다.
+
 **검토 워크플로우 예시:**
 1. `has_error=True` 필터로 에러 공고 목록 확인
 2. 공고 클릭 → LLM 요약문과 원문 비교
@@ -310,6 +339,38 @@ http://localhost:8000/stats/ 에서 공개용 통계 페이지를 확인할 수 
 | 풀타임 세후 시급 (지역별) | 평일 4일 이상 근무 공고의 지역별 세후 시급 버블 차트 |
 
 상단 요약 수치: 전체 공고 수, 지속성/일회성 건수, 주말 파트·풀타임 평균 세후 시급
+
+---
+
+## Notion 통계 생성
+
+DB의 전체 공고 데이터를 기반으로 상세 통계 차트를 생성하고, Notion 페이지에 자동 업로드하는 기능이다.
+
+### 사용법
+
+```bash
+# 차트 생성 + Notion 업로드
+python manage.py run_statistics
+
+# 차트만 생성 (Notion 업로드 건너뜀)
+python manage.py run_statistics --skip-notion
+
+# 차트 저장 경로 지정
+python manage.py run_statistics --output-dir /path/to/output
+```
+
+| 옵션 | 설명 | 기본값 |
+|---|---|---|
+| `--output-dir` | 차트 이미지 저장 디렉토리 | `notion-stats/output/` |
+| `--skip-notion` | Notion 업로드를 건너뛰고 차트 파일만 생성 | `False` |
+
+### 동작 흐름
+
+1. Django DB에서 `JobPosting` 전체 데이터를 DataFrame으로 변환
+2. `notion-stats/one_click_statistics.py`의 `run()` 함수를 호출하여 차트 생성
+3. 생성된 차트 이미지를 Notion 페이지에 업로드 (--skip-notion 미사용 시)
+
+`.env`에 `NOTION_TOKEN` 설정이 필요하다 ([환경 변수](#환경-변수) 참고).
 
 ---
 
@@ -451,6 +512,15 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `user_reviewed` | BooleanField | 개인 검토 완료 여부 |
 | `user_comment` | TextField | 개인 메모 |
 
+### AdminCheck
+
+관리자 검토 완료 기록. **레코드 존재 = 검토 완료**, 레코드 없음 = 미검토. 리뷰 대시보드에서 인라인 저장 또는 일괄 체크 시 자동 생성된다.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `posting` | OneToOneField → JobPosting | 검토 대상 공고 (1:1) |
+| `checked_at` | DateTimeField | 검토 완료 시각 (자동 기록) |
+
 ### PipelineRun
 
 파이프라인 실행 이력. Admin에서 `Postings > Pipeline runs`에서 확인.
@@ -473,11 +543,13 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 기존 Notion 데이터를 JSON으로 변환한 파일이 `data/` 폴더에 있을 경우 아래 스크립트로 SQLite에 한 번에 임포트할 수 있다.
 
 ```bash
-python scripts/migrate_json_to_sqlite.py
+# 파일명을 인자로 지정 (data/ 디렉토리 내 JSON 파일)
+python scripts/migrate_json_to_sqlite.py yakkook.json
+python scripts/migrate_json_to_sqlite.py output_error.json
 ```
 
-- `data/yakkook.json`: 메인 데이터 (3,444행)
-- `data/output_error.json`: 에러 교정 데이터 → `error_corrected=True`로 삽입
+- `output_error.json`, `output_error_3.json` 파일은 자동으로 `error_corrected=True`로 삽입
+- 그 외 파일은 `error_corrected=False`로 삽입
 - 중복 URL은 `get_or_create`로 자동 스킵
 - 한국어 날짜 형식(`2024년 9월 19일`) 자동 변환
 - `"TRUE"` / `"FALSE"` 문자열 → Python bool 자동 변환

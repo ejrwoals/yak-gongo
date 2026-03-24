@@ -12,3 +12,4 @@ seaborn>=0.12
 Pillow>=9.0
 scipy>=1.9
 statsmodels>=0.13
+notion-client>=2.0

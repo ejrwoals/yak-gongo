@@ -6,7 +6,7 @@
 from collections import OrderedDict
 
 from django.db.models import F, Q, Value
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Floor
 
 # ── 필드 메타데이터 ──────────────────────────────────────────
 # type: 'bool' → checkbox, 'float' → number input, 'char' → text input,
@@ -37,7 +37,6 @@ FIELD_META = {
     'city':               {'label': '지역',       'type': 'char'},
     'big_category':       {'label': '대분류',     'type': 'char'},
     'has_error':          {'label': '에러',       'type': 'bool'},
-    'error_corrected':    {'label': '교정 완료',  'type': 'bool'},
     'user_reviewed':      {'label': '리뷰',       'type': 'bool'},
     'user_comment':       {'label': '코멘트',     'type': 'text'},
     'gpt_error_log':      {'label': '에러 로그',  'type': 'text'},
@@ -49,7 +48,7 @@ FIELD_META = {
 
 
 # ── 3단계 공통 베이스 필터 ──
-_STEP3_BASE = {'has_error': False, 'user_reviewed': False}
+_STEP3_BASE = {'has_error': False, 'admin_check__isnull': True}
 
 # ── 공통 편집 가능 필드 (2·3단계 확장 영역) ──
 _COMMON_EXPAND_EDITABLE = [
@@ -61,7 +60,7 @@ _COMMON_EXPAND_EDITABLE = [
     'wage_type', 'wage_raw',
     'is_one_time_work', 'one_time_hourly_wage',
     'city', 'big_category',
-    'error_corrected', 'user_reviewed',
+    'user_reviewed',
     'user_comment',
 ]
 
@@ -94,7 +93,7 @@ REVIEW_PRESETS = OrderedDict([
         'columns': ['title', 'platform', 'created_at', 'net_hourly_wage', 'net_salary',
                      'weekday_work_days', 'weekend_work_days',
                      'is_one_time_work', 'one_time_hourly_wage',
-                     'error_corrected', 'user_reviewed'],
+                     'user_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['gpt_error_log', 'gpt_summary', 'body'],
         'default_sort': 'inserted_at',
@@ -104,7 +103,7 @@ REVIEW_PRESETS = OrderedDict([
     # ── 3단계: 근무일 이상치 ──
     ('workdays_outlier', {
         'label': '근무일 이상치',
-        'description': '평일 근무일 <1 또는 >5, 주말 근무일이 0/0.5/1/2 외의 값인 공고. 총 근무일 기준 정렬로 이상치 탐색.',
+        'description': '평일 근무일 <0 또는 >5 또는 소수점, 주말 근무일이 0/0.5/1/2 외의 값인 공고. 총 근무일 기준 정렬로 이상치 탐색.',
         'group': '3단계: 비에러 이상치',
         'columns': ['title', 'pharmacy_name', 'weekday_work_days', 'weekend_work_days',
                      'total_work_days', 'hours_per_week', 'user_reviewed'],
@@ -114,32 +113,9 @@ REVIEW_PRESETS = OrderedDict([
         'default_sort_dir': 'asc',
     }),
 
-    # ── 3단계: 일회성 분류 확인 ──
-    ('onetime_true', {
-        'label': '일회성 분류 확인',
-        'description': 'is_one_time_work=True인 공고. 제목과 비교하여 일회성이 아닌데 잘못 분류된 건이 있는지 확인.',
-        'group': '3단계: 비에러 이상치',
-        'columns': ['title', 'pharmacy_name', 'is_one_time_work', 'one_time_hourly_wage',
-                     'user_reviewed'],
-        'editable': _COMMON_EXPAND_EDITABLE,
-        'expandable': ['body', 'gpt_summary'],
-        'default_sort': 'inserted_at',
-        'default_sort_dir': 'asc',
-    }),
-    ('onetime_false', {
-        'label': '비일회성 분류 확인',
-        'description': 'is_one_time_work=False인 공고. 제목과 비교하여 실제로는 단기/일회성인데 체크가 안 된 건이 있는지 확인.',
-        'group': '3단계: 비에러 이상치',
-        'columns': ['title', 'pharmacy_name', 'is_one_time_work', 'net_hourly_wage',
-                     'user_reviewed'],
-        'editable': _COMMON_EXPAND_EDITABLE,
-        'expandable': ['body', 'gpt_summary'],
-        'default_sort': 'inserted_at',
-        'default_sort_dir': 'asc',
-    }),
     ('onetime_wage', {
         'label': '일회성 시급 검토',
-        'description': 'is_one_time_work=True인 공고를 시급 기준 정렬. 시급 누락(null) 건이 먼저 표시되고, 이상 시급 값을 탐색.',
+        'description': 'is_one_time_work=True이면서 시급이 null이거나 2.5~4.0 범위를 벗어난 공고.',
         'group': '3단계: 비에러 이상치',
         'columns': ['title', 'pharmacy_name', 'one_time_hourly_wage', 'is_one_time_work',
                      'user_reviewed'],
@@ -152,8 +128,8 @@ REVIEW_PRESETS = OrderedDict([
 
     # ── 3단계: 지속성 급여 ──
     ('salary_missing', {
-        'label': '지속성 급여 누락',
-        'description': 'is_one_time_work=False이면서 net_hourly_wage 또는 net_salary가 null인 공고. 세후 급여 계산이 누락된 건.',
+        'label': '지속성 시급 검토',
+        'description': 'is_one_time_work=False이면서 net_hourly_wage/net_salary가 null이거나 시급이 2.0~4.0 범위를 벗어난 공고.',
         'group': '3단계: 비에러 이상치',
         'columns': ['title', 'pharmacy_name', 'net_hourly_wage', 'net_salary',
                      'wage_raw', 'wage_type', 'user_reviewed'],
@@ -173,17 +149,6 @@ REVIEW_PRESETS = OrderedDict([
         'default_sort': 'inserted_at',
         'default_sort_dir': 'asc',
     }),
-    ('salary_sort', {
-        'label': '지속성 시급 정렬',
-        'description': 'is_one_time_work=False인 전체 공고를 세후 시급 기준 정렬. 오름차순/내림차순으로 이상치 탐색.',
-        'group': '3단계: 비에러 이상치',
-        'columns': ['title', 'pharmacy_name', 'net_hourly_wage', 'net_salary',
-                     'wage_type', 'hours_per_week', 'user_reviewed'],
-        'editable': _COMMON_EXPAND_EDITABLE,
-        'expandable': ['body', 'gpt_summary'],
-        'default_sort': 'net_hourly_wage',
-        'default_sort_dir': 'asc',
-    }),
 
     # ── 3단계: 지역 ──
     ('empty_city', {
@@ -199,24 +164,14 @@ REVIEW_PRESETS = OrderedDict([
     }),
 
     # ── 최종 점검 ──
-    ('reviewed_no_comment', {
-        'label': '리뷰 완료+코멘트 누락',
-        'description': 'user_reviewed=True인데 user_comment가 비어 있는 공고. 실수로 코멘트를 빠뜨린 건이 아닌지 재확인.',
+    ('final_check', {
+        'label': '리뷰완료/코멘트 누락',
+        'description': '리뷰 완료인데 코멘트 누락, 또는 미리뷰인데 코멘트가 있는 공고.',
         'group': '최종 점검',
-        'columns': ['title', 'pharmacy_name', 'has_error', 'error_corrected',
+        'columns': ['title', 'pharmacy_name', 'has_error',
                      'user_reviewed', 'user_comment'],
-        'editable': ['user_comment'],
-        'expandable': [],
-        'default_sort': 'inserted_at',
-        'default_sort_dir': 'desc',
-    }),
-    ('unreviewed_with_comment', {
-        'label': '미리뷰+코멘트 있음',
-        'description': 'user_reviewed=False인데 user_comment가 있는 공고. 코멘트를 남겼으면 리뷰한 것이므로 user_reviewed=True로 변경.',
-        'group': '최종 점검',
-        'columns': ['title', 'pharmacy_name', 'has_error', 'user_reviewed', 'user_comment'],
-        'editable': ['user_reviewed'],
-        'expandable': [],
+        'editable': _COMMON_EXPAND_EDITABLE,
+        'expandable': ['body', 'gpt_summary'],
         'default_sort': 'inserted_at',
         'default_sort_dir': 'desc',
     }),
@@ -228,14 +183,15 @@ def get_preset_queryset(preset_key, base_qs):
     qs = base_qs
 
     if preset_key == 'salary_undisclosed':
-        qs = qs.filter(is_salary_disclosed=False)
+        qs = qs.filter(is_salary_disclosed=False, admin_check__isnull=True)
 
     elif preset_key == 'error_review':
-        qs = qs.filter(has_error=True, user_reviewed=False)
+        qs = qs.filter(has_error=True, admin_check__isnull=True)
 
     elif preset_key == 'workdays_outlier':
         qs = qs.filter(**_STEP3_BASE).filter(
-            Q(weekday_work_days__lt=1) | Q(weekday_work_days__gt=5) |
+            Q(weekday_work_days__lt=0) | Q(weekday_work_days__gt=5) |
+            Q(weekday_work_days__isnull=False) & ~Q(weekday_work_days=Floor('weekday_work_days')) |
             Q(weekend_work_days__isnull=False,
               weekend_work_days__gt=0) &
             ~Q(weekend_work_days__in=[0.5, 1, 2])
@@ -246,34 +202,31 @@ def get_preset_queryset(preset_key, base_qs):
             ),
         )
 
-    elif preset_key == 'onetime_true':
-        qs = qs.filter(**_STEP3_BASE, is_one_time_work=True)
-
-    elif preset_key == 'onetime_false':
-        qs = qs.filter(**_STEP3_BASE, is_one_time_work=False)
-
     elif preset_key == 'onetime_wage':
-        qs = qs.filter(**_STEP3_BASE, is_one_time_work=True)
+        qs = qs.filter(**_STEP3_BASE, is_one_time_work=True).filter(
+            Q(one_time_hourly_wage__isnull=True) |
+            Q(one_time_hourly_wage__lt=2.5) |
+            Q(one_time_hourly_wage__gt=4.0)
+        )
 
     elif preset_key == 'salary_missing':
         qs = qs.filter(**_STEP3_BASE, is_one_time_work=False).filter(
-            Q(net_hourly_wage__isnull=True) | Q(net_salary__isnull=True)
+            Q(net_hourly_wage__isnull=True) | Q(net_salary__isnull=True) |
+            Q(net_hourly_wage__lt=2.0) | Q(net_hourly_wage__gt=4.0)
         )
 
     elif preset_key == 'pretax_check':
-        qs = qs.filter(**_STEP3_BASE, body__contains='세전')
+        qs = qs.filter(**_STEP3_BASE, is_one_time_work=False, body__contains='세전')
 
-    elif preset_key == 'salary_sort':
-        qs = qs.filter(**_STEP3_BASE, is_one_time_work=False)
 
     elif preset_key == 'empty_city':
         qs = qs.filter(**_STEP3_BASE, city='')
 
-    elif preset_key == 'reviewed_no_comment':
-        qs = qs.filter(user_reviewed=True, user_comment='')
-
-    elif preset_key == 'unreviewed_with_comment':
-        qs = qs.filter(user_reviewed=False).exclude(user_comment='')
+    elif preset_key == 'final_check':
+        qs = qs.filter(
+            Q(user_reviewed=True, user_comment='') |
+            Q(user_reviewed=False) & ~Q(user_comment='')
+        )
 
     return qs
 

@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Django setup
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
@@ -79,7 +79,7 @@ def clean_str(value) -> str:
     return '' if s.lower() in ('nan', 'none') else s
 
 
-def record_to_posting(record: dict, force_error_corrected: bool = False) -> dict:
+def record_to_posting(record: dict) -> dict:
     """JSON record dict → JobPosting field dict"""
     return dict(
         url=clean_str(record.get('링크')),
@@ -112,7 +112,6 @@ def record_to_posting(record: dict, force_error_corrected: bool = False) -> dict
         gpt_summary=clean_str(record.get('GPT 요약문')),
         gpt_output_log=clean_str(record.get('GPT 2nd Run')),
         gpt_error_log=clean_str(record.get('GPT Error')),
-        error_corrected=force_error_corrected or parse_bool(record.get('Error 교정 작업')) or False,
         user_reviewed=parse_bool(record.get('내가 검토시 체크')) or False,
         user_comment=clean_str(record.get('내 코멘트')),
     )
@@ -123,13 +122,13 @@ def load_json(path: Path) -> list[dict]:
         return json.load(f)
 
 
-def migrate(json_path: Path, force_error_corrected: bool = False) -> tuple[int, int]:
+def migrate(json_path: Path) -> tuple[int, int]:
     """Returns (inserted, skipped) counts."""
     records = load_json(json_path)
     inserted = skipped = 0
 
     for record in records:
-        fields = record_to_posting(record, force_error_corrected=force_error_corrected)
+        fields = record_to_posting(record)
         url = fields.pop('url')
         if not url:
             skipped += 1
@@ -145,14 +144,17 @@ def migrate(json_path: Path, force_error_corrected: bool = False) -> tuple[int, 
 
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='JSON → SQLite 마이그레이션')
+    parser.add_argument('filename', help='data/ 디렉토리 내 JSON 파일명 (예: output_error.json)')
+    args = parser.parse_args()
+
     data_dir = BASE_DIR / 'data'
+    json_path = data_dir / args.filename
 
-    print('=== yakkook.json 마이그레이션 ===')
-    ins, skip = migrate(data_dir / 'yakkook.json')
-    print(f'  삽입: {ins}  /  스킵(중복): {skip}')
-
-    print('\n=== output_error.json 마이그레이션 ===')
-    ins, skip = migrate(data_dir / 'output_error.json', force_error_corrected=True)
+    print(f'=== {args.filename} 마이그레이션 ===')
+    ins, skip = migrate(json_path)
     print(f'  삽입: {ins}  /  스킵(중복): {skip}')
 
     total = JobPosting.objects.count()
