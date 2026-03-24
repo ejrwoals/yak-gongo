@@ -30,7 +30,7 @@ def process_posting(
 
     Returns:
         dict with keys matching JobPosting model fields.
-        has_error=True if any task failed or validation found issues.
+        gpt_error_log is non-empty if any task failed or validation found issues.
     """
     def _log(msg: str):
         if log:
@@ -41,7 +41,6 @@ def process_posting(
         'gpt_summary': '',
         'gpt_output_log': '',
         'gpt_error_log': '',
-        'has_error': False,
         # salary
         'is_salary_disclosed': None,
         'is_one_time_work': None,
@@ -71,7 +70,6 @@ def process_posting(
     _log('  [Task1] 급여 정보 추출 중...')
     t1 = run_task_1(body, client, model_name)
     if not t1:
-        result['has_error'] = True
         result['gpt_error_log'] = '[Task1 FAIL] LLM 응답 없음 또는 JSON 파싱 실패'
         _log('  [Task1 FAIL] LLM 응답 없음 또는 JSON 파싱 실패')
         return result
@@ -212,7 +210,6 @@ def process_posting(
 
     if error_history:
         result['gpt_error_log'] = error_history
-        result['has_error'] = True
         _log(f'  [ERROR] {error_history.strip()}')
 
     return result

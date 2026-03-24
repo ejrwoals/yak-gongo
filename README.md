@@ -446,7 +446,7 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `gpt_summary` | TextField | LLM 생성 요약문 |
 | `gpt_output_log` | TextField | 각 task 원본 출력 로그 |
 | `gpt_error_log` | TextField | 에러 발생 시 상세 메시지 |
-| `has_error` | BooleanField | 에러 발생 여부 (LLM 또는 validator) |
+| `has_error` | BooleanField | 에러 발생 여부 — `gpt_error_log`가 비어 있지 않으면 `save()` 시 자동으로 `True` 설정 |
 | `error_corrected` | BooleanField | 수동 교정 완료 여부 |
 | `user_reviewed` | BooleanField | 개인 검토 완료 여부 |
 | `user_comment` | TextField | 개인 메모 |

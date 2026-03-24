@@ -60,6 +60,10 @@ class JobPosting(models.Model):
             models.Index(fields=['user_reviewed']),
         ]
 
+    def save(self, *args, **kwargs):
+        self.has_error = bool(self.gpt_error_log)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.platform}] {self.title[:40]}"
 

@@ -112,7 +112,6 @@ def record_to_posting(record: dict, force_error_corrected: bool = False) -> dict
         gpt_summary=clean_str(record.get('GPT 요약문')),
         gpt_output_log=clean_str(record.get('GPT 2nd Run')),
         gpt_error_log=clean_str(record.get('GPT Error')),
-        has_error=bool(clean_str(record.get('GPT Error'))),
         error_corrected=force_error_corrected or parse_bool(record.get('Error 교정 작업')) or False,
         user_reviewed=parse_bool(record.get('내가 검토시 체크')) or False,
         user_comment=clean_str(record.get('내 코멘트')),

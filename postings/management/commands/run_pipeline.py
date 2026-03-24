@@ -227,7 +227,7 @@ class Command(BaseCommand):
             total_processed += 1
             run.total_processed = total_processed
 
-            if pipeline_result.get('has_error'):
+            if pipeline_result.get('gpt_error_log'):
                 total_errors += 1
                 run.total_errors = total_errors
                 _log('  → 저장 완료 (has_error=True)')
