@@ -1,0 +1,119 @@
+{% load i18n %}
+<table class="review-table">
+  <thead>
+    <tr>
+      <th style="width:30px;"><input type="checkbox" id="select-all"></th>
+      {% for col in columns_meta %}
+      <th class="sortable" data-field="{{ col.field }}" title="{{ col.label }}">
+        {{ col.label }}
+      </th>
+      {% endfor %}
+      <th style="width:100px;">액션</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr data-pk="{{ row.pk }}" class="review-row{% if row.user_reviewed %} reviewed{% endif %}">
+      <td><input type="checkbox" class="row-select" value="{{ row.pk }}"></td>
+      {% for cell in row.cells %}
+      <td>
+        {% if cell.editable %}
+          {% if cell.type == 'bool' %}
+            <input type="checkbox" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ cell.field }}"
+                   {% if cell.value %}checked{% endif %}>
+          {% elif cell.type == 'float' %}
+            <input type="number" step="0.01" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ cell.field }}"
+                   value="{% if cell.value is not None %}{{ cell.value }}{% endif %}"
+                   style="width:80px;">
+          {% elif cell.type == 'text' %}
+            <input type="text" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ cell.field }}"
+                   value="{{ cell.display }}" style="width:120px;">
+          {% else %}
+            <input type="text" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ cell.field }}"
+                   value="{{ cell.display }}" style="width:100px;">
+          {% endif %}
+        {% else %}
+          {% if cell.field == 'title' %}
+            <span class="cell-title" title="{{ cell.value }}">{{ cell.display }}</span>
+          {% else %}
+            {{ cell.display }}
+          {% endif %}
+        {% endif %}
+      </td>
+      {% endfor %}
+      <td class="actions-cell">
+        <button class="btn-save" data-pk="{{ row.pk }}" title="저장">저장</button>
+        {% if not row.user_reviewed %}
+        <button class="btn-mark-reviewed" data-pk="{{ row.pk }}" title="리뷰 완료 (수정 없이 통과)">확인</button>
+        {% endif %}
+        {% if has_expandable %}
+        <button class="btn-expand" data-pk="{{ row.pk }}" title="상세보기">상세</button>
+        {% endif %}
+        {% if row.url %}
+        <a href="{{ row.url }}" target="_blank" class="btn-link" title="원문 링크">링크</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% if has_expandable %}
+    <tr class="detail-row" data-pk="{{ row.pk }}" style="display:none;">
+      <td colspan="{{ total_cols }}">
+        <div class="detail-panels">
+          {% for field, info in row.expandable_readonly.items %}
+          <div class="detail-panel">
+            <strong>{{ info.label }}:</strong>
+            <pre class="detail-pre">{{ info.value }}</pre>
+          </div>
+          {% endfor %}
+          {% if row.expandable_edit %}
+          <div class="detail-panel edit-panel">
+            <strong>편집 필드:</strong>
+            <div class="expand-edit-grid">
+              {% for field, info in row.expandable_edit.items %}
+              <div class="expand-edit-item">
+                <label>{{ info.label }}:</label>
+                {% if info.type == 'bool' %}
+                  <input type="checkbox" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ field }}"
+                         {% if info.value %}checked{% endif %}>
+                {% elif info.type == 'float' %}
+                  <input type="number" step="0.01" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ field }}"
+                         value="{% if info.value is not None %}{{ info.value }}{% endif %}" style="width:100px;">
+                {% elif info.type == 'text' %}
+                  <textarea class="edit-field" data-pk="{{ row.pk }}" data-field="{{ field }}"
+                            rows="2" style="width:100%;">{% if info.value %}{{ info.value }}{% endif %}</textarea>
+                {% else %}
+                  <input type="text" class="edit-field" data-pk="{{ row.pk }}" data-field="{{ field }}"
+                         value="{% if info.value %}{{ info.value }}{% endif %}" style="width:150px;">
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% endif %}
+    {% empty %}
+    <tr><td colspan="{{ total_cols }}" style="text-align:center; padding:20px; color:#666;">
+      해당 조건의 공고가 없습니다.
+    </td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pagination-bar">
+  <span>{{ page_obj.paginator.count }}건 중 {{ page_obj.start_index }}-{{ page_obj.end_index }}</span>
+  {% if page_obj.has_previous %}
+  <button class="page-btn" data-page="{{ page_obj.previous_page_number }}">이전</button>
+  {% endif %}
+  <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+  <button class="page-btn" data-page="{{ page_obj.next_page_number }}">다음</button>
+  {% endif %}
+</div>
+{% elif rows %}
+<div class="pagination-bar">
+  <span>총 {{ page_obj.paginator.count }}건</span>
+</div>
+{% endif %}

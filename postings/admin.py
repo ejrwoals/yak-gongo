@@ -1,8 +1,10 @@
+import json
 import threading
 
 import django.db
 from django.contrib import admin
 from django.core.management import call_command
+from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import path
@@ -12,6 +14,13 @@ from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilde
 
 from .forms import PipelineRunForm
 from .models import JobPosting, PipelineRun
+from .review_presets import (
+    FIELD_META,
+    REVIEW_PRESETS,
+    get_grouped_presets,
+    get_preset_queryset,
+    get_sort_expression,
+)
 
 # run_id → threading.Event 매핑 (카카오 로그인 대기용)
 _login_events: dict[int, threading.Event] = {}
@@ -19,6 +28,8 @@ _login_events: dict[int, threading.Event] = {}
 
 @admin.register(JobPosting)
 class JobPostingAdmin(admin.ModelAdmin):
+    change_list_template = 'admin/postings/jobposting/change_list.html'
+
     list_display = (
         'title_short', 'created_at', 'platform', 'city',
         'hourly_wage_display', 'net_salary_display', 'is_one_time_work_display', 'user_reviewed', 'has_error',
@@ -94,6 +105,236 @@ class JobPostingAdmin(admin.ModelAdmin):
         if obj.url:
             return format_html('<a href="{}" target="_blank">링크</a>', obj.url)
         return '-'
+
+
+    # ── 리뷰 대시보드 커스텀 뷰 ────────────────────────────────
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('review/', self.admin_site.admin_view(self.review_page_view),
+                 name='jobposting_review'),
+            path('review/data/', self.admin_site.admin_view(self.review_data_view),
+                 name='jobposting_review_data'),
+            path('review/save/', self.admin_site.admin_view(self.review_save_view),
+                 name='jobposting_review_save'),
+            path('review/mark-reviewed/', self.admin_site.admin_view(self.review_mark_view),
+                 name='jobposting_review_mark'),
+            path('review/counts/', self.admin_site.admin_view(self.review_counts_view),
+                 name='jobposting_review_counts'),
+        ]
+        return custom + urls
+
+    def review_page_view(self, request):
+        """리뷰 대시보드 메인 페이지."""
+        context = {
+            **self.admin_site.each_context(request),
+            'title': '공고 리뷰 대시보드',
+            'opts': self.model._meta,
+            'grouped_presets': get_grouped_presets(),
+            'presets_json': json.dumps({
+                key: {
+                    'label': p['label'],
+                    'description': p.get('description', ''),
+                    'columns': p['columns'],
+                    'default_sort': p['default_sort'],
+                    'default_sort_dir': p['default_sort_dir'],
+                }
+                for key, p in REVIEW_PRESETS.items()
+            }),
+        }
+        return render(request, 'admin/postings/jobposting/review_dashboard.html', context)
+
+    def review_data_view(self, request):
+        """AJAX: 프리셋에 맞는 테이블 HTML fragment 반환."""
+        preset_key = request.GET.get('preset', '')
+        if preset_key not in REVIEW_PRESETS:
+            return JsonResponse({'error': 'invalid preset'}, status=400)
+
+        preset = REVIEW_PRESETS[preset_key]
+        sort_field = request.GET.get('sort', preset['default_sort'])
+        sort_dir = request.GET.get('sort_dir', preset['default_sort_dir'])
+        page_num = request.GET.get('page', '1')
+
+        # 정렬 필드 검증
+        valid_sort_fields = preset['columns'] + ['inserted_at']
+        if sort_field not in valid_sort_fields:
+            sort_field = preset['default_sort']
+        if sort_dir not in ('asc', 'desc'):
+            sort_dir = 'asc'
+
+        qs = get_preset_queryset(preset_key, JobPosting.objects.all())
+        sort_expr = get_sort_expression(sort_field, sort_dir, preset_key)
+        qs = qs.order_by(sort_expr)
+
+        paginator = Paginator(qs, 25)
+        page_obj = paginator.get_page(page_num)
+
+        # 컬럼 메타 빌드
+        columns_meta = []
+        for field_name in preset['columns']:
+            meta = FIELD_META.get(field_name, {'label': field_name, 'type': 'char'})
+            columns_meta.append({
+                'field': field_name,
+                'label': meta['label'],
+                'type': meta['type'],
+                'editable': field_name in preset.get('editable', []),
+            })
+
+        # 확장 영역의 편집 가능 필드 (columns에 없는 editable 필드)
+        expand_editable = [
+            f for f in preset.get('editable', [])
+            if f not in preset['columns']
+        ]
+
+        # 행 데이터 빌드
+        rows = []
+        for posting in page_obj:
+            cells = []
+            for col in columns_meta:
+                value = getattr(posting, col['field'], None)
+                display = self._format_display(value, col['type'], col['field'])
+                cells.append({
+                    'field': col['field'],
+                    'type': col['type'],
+                    'value': value,
+                    'display': display,
+                    'editable': col['editable'],
+                })
+
+            # 확장 영역 데이터
+            expandable_readonly = {}
+            for field in preset.get('expandable', []):
+                expandable_readonly[field] = {
+                    'label': FIELD_META.get(field, {}).get('label', field),
+                    'value': getattr(posting, field, '') or '',
+                }
+            expandable_edit = {}
+            for field in expand_editable:
+                meta = FIELD_META.get(field, {'label': field, 'type': 'char'})
+                expandable_edit[field] = {
+                    'label': meta['label'],
+                    'type': meta['type'],
+                    'value': getattr(posting, field, None),
+                }
+
+            rows.append({
+                'pk': posting.pk,
+                'cells': cells,
+                'expandable_readonly': expandable_readonly,
+                'expandable_edit': expandable_edit,
+                'user_reviewed': posting.user_reviewed,
+                'url': posting.url,
+            })
+
+        has_expandable = bool(preset.get('expandable') or expand_editable)
+        total_cols = len(columns_meta) + 2 + (1 if has_expandable else 0)  # checkbox + actions + expand
+
+        context = {
+            'rows': rows,
+            'columns_meta': columns_meta,
+            'page_obj': page_obj,
+            'has_expandable': has_expandable,
+            'total_cols': total_cols,
+            'preset_key': preset_key,
+        }
+        return render(request, 'admin/postings/jobposting/review_table_fragment.html', context)
+
+    def review_save_view(self, request):
+        """AJAX POST: 단건 저장."""
+        if request.method != 'POST':
+            return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'ok': False, 'error': 'invalid JSON'}, status=400)
+
+        pk = data.get('pk')
+        fields = data.get('fields', {})
+        preset_key = data.get('preset', '')
+
+        if not pk or not fields:
+            return JsonResponse({'ok': False, 'error': 'pk and fields required'}, status=400)
+
+        # 프리셋의 editable 목록으로 허용 필드 검증
+        allowed = set()
+        if preset_key in REVIEW_PRESETS:
+            allowed = set(REVIEW_PRESETS[preset_key].get('editable', []))
+
+        try:
+            posting = JobPosting.objects.get(pk=pk)
+        except JobPosting.DoesNotExist:
+            return JsonResponse({'ok': False, 'error': 'not found'}, status=404)
+
+        for field_name, value in fields.items():
+            if allowed and field_name not in allowed:
+                continue
+            meta = FIELD_META.get(field_name)
+            if not meta:
+                continue
+            converted = self._convert_value(value, meta['type'])
+            setattr(posting, field_name, converted)
+
+        posting.save()
+        return JsonResponse({'ok': True})
+
+    def review_mark_view(self, request):
+        """AJAX POST: 벌크 리뷰 완료 처리."""
+        if request.method != 'POST':
+            return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'ok': False, 'error': 'invalid JSON'}, status=400)
+
+        pks = data.get('pks', [])
+        if not pks:
+            return JsonResponse({'ok': False, 'error': 'pks required'}, status=400)
+
+        count = JobPosting.objects.filter(pk__in=pks).update(user_reviewed=True)
+        return JsonResponse({'ok': True, 'count': count})
+
+    def review_counts_view(self, request):
+        """AJAX: 프리셋별 건수 반환."""
+        base_qs = JobPosting.objects.all()
+        counts = {}
+        for key in REVIEW_PRESETS:
+            counts[key] = get_preset_queryset(key, base_qs).count()
+        return JsonResponse(counts)
+
+    @staticmethod
+    def _format_display(value, field_type, field_name=''):
+        """셀 표시 값 포맷팅."""
+        if value is None:
+            return '-'
+        if field_type == 'bool':
+            return 'Y' if value else 'N'
+        if field_type == 'float':
+            if isinstance(value, float):
+                return f'{value:.2f}' if value % 1 else str(int(value))
+            return str(value)
+        if field_type == 'date':
+            return value.strftime('%m/%d') if hasattr(value, 'strftime') else str(value)
+        if field_type == 'datetime':
+            return value.strftime('%m/%d %H:%M') if hasattr(value, 'strftime') else str(value)
+        if field_type == 'char' and field_name == 'title':
+            return str(value)[:40] if value else '-'
+        return str(value) if value else ''
+
+    @staticmethod
+    def _convert_value(value, field_type):
+        """클라이언트에서 받은 값을 모델 필드 타입에 맞게 변환."""
+        if field_type == 'bool':
+            if isinstance(value, bool):
+                return value
+            return str(value).lower() in ('true', '1', 'on', 'yes')
+        if field_type == 'float':
+            if value is None or value == '' or value == 'null':
+                return None
+            return float(value)
+        if field_type in ('char', 'text'):
+            return str(value) if value is not None else ''
+        return value
 
 
 @admin.register(PipelineRun)

@@ -1,0 +1,430 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}공고 리뷰 대시보드{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<h1>공고 리뷰 대시보드</h1>
+
+<!-- 프리셋 탭 -->
+<div id="preset-tabs">
+  {% for group_name, presets in grouped_presets %}
+  <div class="preset-group">
+    <span class="group-label">{{ group_name }}</span>
+    {% for key, preset in presets %}
+    <button class="preset-btn" data-preset="{{ key }}">
+      {{ preset.label }}
+      <span class="badge" id="count-{{ key }}">-</span>
+    </button>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 프리셋 설명 -->
+<div id="preset-description" style="display:none;"></div>
+
+<!-- 컨트롤 바 -->
+<div id="controls-bar" style="display:none;">
+  <div class="controls-left">
+    <label>정렬:
+      <select id="sort-field"></select>
+    </label>
+    <button id="sort-toggle" title="정렬 방향 전환">ASC</button>
+  </div>
+  <div class="controls-right">
+    <button id="bulk-mark-reviewed" style="display:none;">선택 항목 리뷰 완료 (<span id="selected-count">0</span>건)</button>
+  </div>
+</div>
+
+<!-- 테이블 컨테이너 -->
+<div id="table-container">
+  <p style="text-align:center; color:#666; padding:40px;">프리셋을 선택하세요.</p>
+</div>
+
+<!-- 하단 네비게이션 -->
+<div style="margin-top: 16px;">
+  <a href="{% url 'admin:postings_jobposting_changelist' %}" class="button">목록으로</a>
+</div>
+
+<style>
+  /* 프리셋 탭 */
+  #preset-tabs { margin-bottom: 16px; }
+  .preset-group { margin-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .group-label { font-weight: bold; font-size: 13px; color: #555; min-width: 140px; }
+  .preset-btn {
+    padding: 6px 14px; border: 1px solid #ccc; background: #f8f8f8;
+    border-radius: 4px; cursor: pointer; font-size: 13px; position: relative;
+  }
+  .preset-btn:hover { background: #e8e8e8; }
+  .preset-btn.active { background: #417690; color: #fff; border-color: #417690; }
+  .badge {
+    display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 4px;
+    background: #ddd; border-radius: 10px; font-size: 11px; text-align: center;
+  }
+  .preset-btn.active .badge { background: rgba(255,255,255,0.3); }
+
+  /* 프리셋 설명 */
+  #preset-description {
+    margin-bottom: 10px; padding: 8px 14px; background: #eef6fc; border-left: 3px solid #417690;
+    font-size: 13px; color: #333; border-radius: 0 4px 4px 0;
+  }
+
+  /* 컨트롤 바 */
+  #controls-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; padding: 8px 12px; background: #f0f0f0; border-radius: 4px;
+  }
+  .controls-left, .controls-right { display: flex; align-items: center; gap: 8px; }
+  #sort-field { padding: 4px 8px; }
+  #sort-toggle {
+    padding: 4px 12px; border: 1px solid #999; background: #fff;
+    border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold;
+  }
+  #bulk-mark-reviewed {
+    padding: 6px 16px; background: #28a745; color: #fff; border: none;
+    border-radius: 4px; cursor: pointer; font-size: 13px;
+  }
+  #bulk-mark-reviewed:hover { background: #218838; }
+
+  /* 테이블 */
+  .review-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .review-table th {
+    background: #417690; color: #fff; padding: 8px 6px; text-align: left;
+    font-size: 12px; white-space: nowrap; cursor: pointer; user-select: none;
+  }
+  .review-table th:hover { background: #356179; }
+  .review-table td { padding: 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  .review-row:hover { background: #f5f9fc; }
+  .review-row.reviewed { background: #f0f8f0; opacity: 0.7; }
+  .review-row.save-success { animation: flashGreen 0.6s ease; }
+  @keyframes flashGreen {
+    0% { background: #d4edda; } 100% { background: transparent; }
+  }
+
+  .cell-title { max-width: 250px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .actions-cell { white-space: nowrap; }
+  .actions-cell button, .actions-cell a {
+    padding: 3px 8px; border: 1px solid #999; background: #fff; border-radius: 3px;
+    cursor: pointer; font-size: 11px; text-decoration: none; color: #333; margin-right: 2px;
+  }
+  .btn-save { border-color: #417690; color: #417690; }
+  .btn-save:hover { background: #417690; color: #fff; }
+  .btn-mark-reviewed { border-color: #28a745; color: #28a745; }
+  .btn-mark-reviewed:hover { background: #28a745; color: #fff; }
+  .btn-expand { border-color: #6c757d; color: #6c757d; }
+  .btn-expand:hover { background: #6c757d; color: #fff; }
+  .btn-link { border-color: #fd7e14; color: #fd7e14; }
+  .btn-link:hover { background: #fd7e14; color: #fff; }
+
+  /* 편집 필드 */
+  .edit-field[type="number"], .edit-field[type="text"] {
+    padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;
+  }
+  .edit-field:focus { outline: none; border-color: #417690; box-shadow: 0 0 3px rgba(65,118,144,0.3); }
+
+  /* 확장 행 */
+  .detail-row td { background: #fafafa; padding: 12px 16px; }
+  .detail-panels { display: flex; flex-direction: column; gap: 12px; }
+  .detail-panel { }
+  .detail-pre {
+    background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px;
+    font-size: 12px; line-height: 1.5; max-height: 250px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; margin-top: 4px;
+  }
+  .expand-edit-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px; margin-top: 6px;
+  }
+  .expand-edit-item { display: flex; align-items: center; gap: 6px; }
+  .expand-edit-item label { font-size: 12px; font-weight: bold; white-space: nowrap; min-width: 70px; }
+  .edit-panel { border-top: 1px solid #ddd; padding-top: 10px; margin-top: 4px; }
+
+  /* 페이지네이션 */
+  .pagination-bar {
+    margin-top: 10px; padding: 8px 12px; background: #f0f0f0; border-radius: 4px;
+    display: flex; align-items: center; gap: 12px; font-size: 13px;
+  }
+  .page-btn {
+    padding: 4px 12px; border: 1px solid #999; background: #fff;
+    border-radius: 3px; cursor: pointer; font-size: 12px;
+  }
+  .page-btn:hover { background: #e0e0e0; }
+</style>
+
+<script>
+(function() {
+  const PRESETS = {{ presets_json|safe }};
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
+  const state = {
+    preset: null,
+    sort: null,
+    sortDir: 'asc',
+    page: 1,
+  };
+
+  // URL hash 상태 복원
+  function restoreState() {
+    const hash = location.hash.slice(1);
+    if (!hash) return;
+    const params = new URLSearchParams(hash);
+    if (params.get('preset') && PRESETS[params.get('preset')]) {
+      state.preset = params.get('preset');
+      state.sort = params.get('sort') || PRESETS[state.preset].default_sort;
+      state.sortDir = params.get('dir') || PRESETS[state.preset].default_sort_dir;
+      state.page = parseInt(params.get('page')) || 1;
+    }
+  }
+
+  function saveState() {
+    if (!state.preset) return;
+    const params = new URLSearchParams({
+      preset: state.preset,
+      sort: state.sort,
+      dir: state.sortDir,
+      page: state.page,
+    });
+    history.replaceState(null, '', '#' + params.toString());
+  }
+
+  // 프리셋 탭 클릭
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const key = this.dataset.preset;
+      state.preset = key;
+      state.sort = PRESETS[key].default_sort;
+      state.sortDir = PRESETS[key].default_sort_dir;
+      state.page = 1;
+      activatePreset(key);
+      loadData();
+    });
+  });
+
+  function activatePreset(key) {
+    const preset = PRESETS[key];
+
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.querySelector(`.preset-btn[data-preset="${key}"]`);
+    if (btn) btn.classList.add('active');
+
+    // 설명 표시
+    const descEl = document.getElementById('preset-description');
+    if (preset.description) {
+      descEl.textContent = preset.description;
+      descEl.style.display = '';
+    } else {
+      descEl.style.display = 'none';
+    }
+
+    // 정렬 드롭다운 업데이트
+    const sortSelect = document.getElementById('sort-field');
+    sortSelect.innerHTML = '';
+    const cols = preset.columns.concat(['inserted_at']);
+    const seen = new Set();
+    cols.forEach(field => {
+      if (seen.has(field)) return;
+      seen.add(field);
+      const opt = document.createElement('option');
+      opt.value = field;
+      opt.textContent = field;
+      if (field === state.sort) opt.selected = true;
+      sortSelect.appendChild(opt);
+    });
+
+    document.getElementById('sort-toggle').textContent = state.sortDir.toUpperCase();
+    document.getElementById('controls-bar').style.display = 'flex';
+  }
+
+  // 정렬 컨트롤
+  document.getElementById('sort-field').addEventListener('change', function() {
+    state.sort = this.value;
+    state.page = 1;
+    loadData();
+  });
+  document.getElementById('sort-toggle').addEventListener('click', function() {
+    state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    this.textContent = state.sortDir.toUpperCase();
+    state.page = 1;
+    loadData();
+  });
+
+  // 테이블 헤더 클릭으로 정렬
+  document.getElementById('table-container').addEventListener('click', function(e) {
+    const th = e.target.closest('th.sortable');
+    if (th) {
+      const field = th.dataset.field;
+      if (state.sort === field) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sort = field;
+        state.sortDir = 'asc';
+      }
+      document.getElementById('sort-field').value = field;
+      document.getElementById('sort-toggle').textContent = state.sortDir.toUpperCase();
+      state.page = 1;
+      loadData();
+    }
+  });
+
+  // 데이터 로드
+  function loadData() {
+    if (!state.preset) return;
+    saveState();
+    const container = document.getElementById('table-container');
+    container.style.opacity = '0.5';
+
+    const url = `data/?preset=${state.preset}&sort=${state.sort}&sort_dir=${state.sortDir}&page=${state.page}`;
+    fetch(url)
+      .then(r => r.text())
+      .then(html => {
+        container.innerHTML = html;
+        container.style.opacity = '1';
+        updateSelectionCount();
+      })
+      .catch(err => {
+        container.innerHTML = '<p style="color:red; text-align:center;">데이터 로드 실패</p>';
+        container.style.opacity = '1';
+      });
+  }
+
+  // 건수 로드
+  function loadCounts() {
+    fetch('counts/')
+      .then(r => r.json())
+      .then(data => {
+        Object.entries(data).forEach(([key, count]) => {
+          const badge = document.getElementById('count-' + key);
+          if (badge) {
+            badge.textContent = count;
+            badge.style.background = count > 0 ? '#ffc107' : '#ddd';
+            badge.style.color = count > 0 ? '#333' : '#999';
+          }
+        });
+      });
+  }
+
+  // 이벤트 위임: 테이블 내 버튼/체크박스
+  document.getElementById('table-container').addEventListener('click', function(e) {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+
+    if (btn.classList.contains('btn-save')) {
+      saveRow(btn.dataset.pk);
+    } else if (btn.classList.contains('btn-mark-reviewed')) {
+      markReviewed([parseInt(btn.dataset.pk)]);
+    } else if (btn.classList.contains('btn-expand')) {
+      toggleDetail(btn.dataset.pk);
+    } else if (btn.classList.contains('page-btn')) {
+      state.page = parseInt(btn.dataset.page);
+      loadData();
+    }
+  });
+
+  // 체크박스 이벤트 위임
+  document.getElementById('table-container').addEventListener('change', function(e) {
+    if (e.target.id === 'select-all') {
+      document.querySelectorAll('.row-select').forEach(cb => { cb.checked = e.target.checked; });
+      updateSelectionCount();
+    } else if (e.target.classList.contains('row-select')) {
+      updateSelectionCount();
+    }
+  });
+
+  function updateSelectionCount() {
+    const checked = document.querySelectorAll('.row-select:checked');
+    const countEl = document.getElementById('selected-count');
+    const bulkBtn = document.getElementById('bulk-mark-reviewed');
+    countEl.textContent = checked.length;
+    bulkBtn.style.display = checked.length > 0 ? '' : 'none';
+  }
+
+  // 벌크 리뷰 완료
+  document.getElementById('bulk-mark-reviewed').addEventListener('click', function() {
+    const pks = Array.from(document.querySelectorAll('.row-select:checked')).map(cb => parseInt(cb.value));
+    if (pks.length === 0) return;
+    markReviewed(pks);
+  });
+
+  // 저장
+  function saveRow(pk) {
+    const fields = {};
+    document.querySelectorAll(`.edit-field[data-pk="${pk}"]`).forEach(el => {
+      const field = el.dataset.field;
+      if (el.type === 'checkbox') {
+        fields[field] = el.checked;
+      } else if (el.tagName === 'TEXTAREA') {
+        fields[field] = el.value;
+      } else {
+        fields[field] = el.value;
+      }
+    });
+
+    fetch('save/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ pk: parseInt(pk), fields: fields, preset: state.preset }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          const row = document.querySelector(`tr.review-row[data-pk="${pk}"]`);
+          if (row) {
+            row.classList.add('save-success');
+            setTimeout(() => row.classList.remove('save-success'), 700);
+            // 리뷰 완료 시 행 스타일 업데이트
+            if (fields.user_reviewed === true) {
+              row.classList.add('reviewed');
+            }
+          }
+          loadCounts();
+        } else {
+          alert('저장 실패: ' + (data.error || '알 수 없는 오류'));
+        }
+      })
+      .catch(() => alert('저장 요청 실패'));
+  }
+
+  // 리뷰 완료
+  function markReviewed(pks) {
+    fetch('mark-reviewed/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ pks: pks }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          pks.forEach(pk => {
+            const row = document.querySelector(`tr.review-row[data-pk="${pk}"]`);
+            if (row) {
+              row.classList.add('reviewed', 'save-success');
+              setTimeout(() => row.classList.remove('save-success'), 700);
+              // 확인 버튼 제거
+              const markBtn = row.querySelector('.btn-mark-reviewed');
+              if (markBtn) markBtn.remove();
+            }
+          });
+          loadCounts();
+        }
+      });
+  }
+
+  // 상세 토글
+  function toggleDetail(pk) {
+    const detailRow = document.querySelector(`tr.detail-row[data-pk="${pk}"]`);
+    if (detailRow) {
+      detailRow.style.display = detailRow.style.display === 'none' ? '' : 'none';
+    }
+  }
+
+  // 초기화
+  restoreState();
+  loadCounts();
+  if (state.preset) {
+    activatePreset(state.preset);
+    loadData();
+  }
+})();
+</script>
+{% endblock %}
