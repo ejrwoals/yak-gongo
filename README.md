@@ -53,8 +53,8 @@ yak-gongo/
 │
 ├── scraper/                 # 웹 스크래퍼 (Selenium)
 │   ├── yakdap.py            # 약문약답 스크래퍼
-│   ├── pharm_recruit.py     # 팜리크루트 스크래퍼 (자동 페이지네이션)
-│   └── pharm_recruit_urls.json  # 팜리크루트 지역-URL 매핑 데이터
+│   └── pharm_recruit.py     # 팜리크루트 스크래퍼 (자동 페이지네이션)
+│   # pharm_recruit_urls.json — 초기 설정 시 생성 필요 (아래 참고)
 │
 ├── geo/
 │   └── mapping.py           # 주소 → 지역코드, 지역 대분류 변환
@@ -65,6 +65,10 @@ yak-gongo/
 │   ├── urls.py
 │   └── templates/stats/
 │       └── dashboard.html   # 통계 대시보드 페이지
+│
+├── legacy-files/               # 과거 프로젝트 파일 (레거시)
+│   └── one-time-data-migration/
+│       └── convert_pharm_urls.py  # 팜리크루트 URL JSON 생성 스크립트
 │
 ├── scripts/
 │   └── migrate_json_to_sqlite.py  # 기존 JSON 데이터 → SQLite (1회성)
@@ -99,7 +103,16 @@ uv pip install -r requirements.txt
 
 프로젝트 루트에 `.env` 파일을 생성한다 (아래 [환경 변수](#환경-변수) 참고).
 
-### 4. DB 마이그레이션
+### 4. 팜리크루트 URL 데이터 생성
+
+팜리크루트 스크래퍼는 `scraper/pharm_recruit_urls.json` 파일에서 지역별 URL을 로드한다. 이 파일은 `.gitignore`에 의해 버전 관리에서 제외되므로, 최초 1회 생성이 필요하다.
+
+```bash
+python legacy-files/one-time-data-migration/convert_pharm_urls.py
+cp legacy-files/one-time-data-migration/pharm_recruit_urls.json scraper/
+```
+
+### 5. DB 마이그레이션
 
 ```bash
 python manage.py migrate
@@ -107,13 +120,13 @@ python manage.py migrate
 
 `data/db.sqlite3` 파일이 생성된다.
 
-### 5. 관리자 계정 생성
+### 6. 관리자 계정 생성
 
 ```bash
 python manage.py createsuperuser
 ```
 
-### 6. 서버 실행
+### 7. 서버 실행
 
 ```bash
 python manage.py runserver
@@ -137,8 +150,6 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # LLM API
 GOOGLE_API_KEY=your-google-api-key       # Gemini API (필수)
 LLM_MODEL=gemini-2.5-flash               # 사용할 Gemini 모델
-OPENAI_API_KEY=your-openai-api-key       # GPT-4o fallback용 (선택)
-FALLBACK_LLM_MODEL=gpt-4o
 ```
 
 **GOOGLE_API_KEY** 발급: [Google AI Studio](https://aistudio.google.com/) → 'Get API key'
@@ -187,7 +198,7 @@ python manage.py run_pipeline \
 
 `--big-category`에 가능한 값: `서울`, `인천`, `경기 중부`, `경기 외곽`, `지방`
 
-각 대분류에 포함되는 세부 지역은 `scraper/pharm_recruit_urls.json`에 정의되어 있다.
+각 대분류에 포함되는 세부 지역(도시)은 `scraper/pharm_recruit_urls.json`에 정의되어 있다. `--pharm-count`를 지정하면 총 수집 개수를 선택한 대분류 수로 나누고, 다시 각 대분류 내 도시 수로 나눠 균등 분배한다.
 
 ### 공통 옵션
 
@@ -233,6 +244,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 1. 소스(약문약답/팜리크루트) 선택 및 옵션 입력
    - 약문약답 선택 시 `headless` 옵션은 자동으로 비활성화됨 (카카오 로그인 필요)
+   - 팜리크루트 선택 시 지역 대분류를 체크박스로 복수 선택 가능, 수집 개수 한도 설정 가능
 2. **실행** 버튼 클릭 → 백그라운드 thread에서 `run_pipeline` 커맨드 실행
 3. 자동으로 실시간 로그 페이지(`/log/<id>/`)로 이동하여 진행 상황 확인 (AJAX 폴링)
 4. 약문약답의 경우, 카카오 로그인 완료 후 **로그인 완료** 버튼을 클릭하면 스크래핑이 시작됨
@@ -254,9 +266,11 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 **Postings > Job postings** 클릭.
 
-- **필터** (우측 사이드바): 지역 대분류, 플랫폼, 에러 여부, 검토 여부, 일회성/지속성, 급여 명시 여부
+- **목록 컬럼**: 공고 제목, 등록일, 플랫폼, 지역, 시급(세후), 월급(세후), 일회성 여부, 검토 여부, 에러 여부, 원문 링크
+  - 시급(세후) 컬럼은 일회성 근무이면 `one_time_hourly_wage`, 지속성이면 `net_hourly_wage`를 자동 표시
+- **필터** (우측 사이드바): 등록일 범위, 급여 명시 여부, 일회성/지속성, 플랫폼, 지역 대분류, 에러 여부, 검토 여부, 에러 교정 여부, 시급(세후) 범위
 - **검색**: 공고 제목, 약국 이름, 지역, URL
-- **`검토 완료` 체크박스**: 목록에서 바로 체크·저장 가능 (별도 페이지 이동 불필요)
+- **`관리자 리뷰` 체크박스**: 목록에서 바로 체크·저장 가능 (별도 페이지 이동 불필요)
 - **에러 공고 필터링**: `has_error = True`로 필터 → LLM이 의심스럽다고 판단한 공고만 모아서 검토
 
 ### 공고 상세 화면
@@ -266,7 +280,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 | 섹션 | 주요 필드 |
 |---|---|
 | 기본 정보 | 플랫폼, 등록일, 약국 이름, 지역, 지역 대분류 |
-| 급여 | 급여 명시 여부, 급여 유형, 원본 급여, 세후 시급, 세후 월급 |
+| 급여 | 급여 명시 여부, 급여 유형, 원본 급여, 세후 시급, 세후 월급, 일회성 여부, 일회성 시급 |
 | 근무 일정 | 평일/주말 근무 일수, 출퇴근 시각, 주당·월별 근무 시간 |
 | 복리후생 | 월차, 경력 요구, 식사 관련 |
 | LLM 결과 | 모델명, 요약문, 상세 로그 (접기/펼치기) |
@@ -306,8 +320,8 @@ http://localhost:8000/stats/ 에서 공개용 통계 페이지를 확인할 수 
 | 파일 | 역할 |
 |---|---|
 | `prompts.py` | `QUERY_TASK_1~5`, `FEW_SHOT_1~5` 상수 — 프롬프트 문자열만 관리 |
-| `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 |
-| `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
+| `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 (`raw_decode`로 첫 번째 유효 JSON만 추출) |
+| `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. 급여 미명시 공고는 `None`을 반환하여 저장을 건너뜀. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간 재계산 |
 | `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환 |
 
@@ -320,7 +334,7 @@ from pipeline.runner import process_posting
 
 client = genai.Client(api_key=settings.GOOGLE_API_KEY)
 result = process_posting(body="공고 본문 텍스트", client=client, model_name=settings.LLM_MODEL)
-# result는 JobPosting 필드에 대응하는 dict
+# result는 JobPosting 필드에 대응하는 dict, 급여 미명시이면 None
 
 # 로그 콜백을 전달하면 처리 단계별 상세 로그를 받을 수 있다
 result = process_posting(body="...", client=client, model_name=settings.LLM_MODEL, log=print)
@@ -331,8 +345,8 @@ result = process_posting(body="...", client=client, model_name=settings.LLM_MODE
 | 파일 | 역할 |
 |---|---|
 | `yakdap.py` | `scrape(start_id, count, step, year, ...)` → `list[dict]` |
-| `pharm_recruit.py` | `scrape(big_category, ...)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원 |
-| `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑) |
+| `pharm_recruit.py` | `scrape(big_category, year, ...)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원 |
+| `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑). `.gitignore` 대상이므로 [초기 설정](#초기-설정) 참고하여 생성 필요 |
 
 반환 dict의 키: `url`, `platform`, `created_at`, `title`, `pharmacy_name`, `body`, `city`, `big_category`
 
@@ -367,12 +381,13 @@ stats   = get_summary_stats()          # dict: total, continuous_count, ...
 
 ```
 Task 1: 급여 정보 추출
+    ├─ 급여 미명시 → None 반환 (저장 건너뜀)
     ├─ is_one_time_work = True
     │       └─ Task 2: 일회성 시급 계산
     └─ is_one_time_work = False
             ├─ Task 3: 출퇴근 시각 추출
             └─ Task 4: Task 3 결과 검토·수정
-Task 5: 복리후생 추출 (항상 실행)
+Task 5: 복리후생 추출 (급여 명시 공고만)
 ```
 
 ### 시급 계산 기준

@@ -7,6 +7,8 @@ from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils import timezone
+from django.utils.html import format_html
+from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilder
 
 from .forms import PipelineRunForm
 from .models import JobPosting, PipelineRun
@@ -18,11 +20,17 @@ _login_events: dict[int, threading.Event] = {}
 @admin.register(JobPosting)
 class JobPostingAdmin(admin.ModelAdmin):
     list_display = (
-        'title_short', 'platform', 'big_category', 'city',
-        'hourly_wage_display', 'created_at', 'user_reviewed', 'has_error',
+        'title_short', 'created_at', 'platform', 'city',
+        'hourly_wage_display', 'net_salary_display', 'is_one_time_work_display', 'user_reviewed', 'has_error',
+        'link_display',
     )
     list_display_links = ('title_short',)
-    list_filter = ('big_category', 'platform', 'has_error', 'error_corrected', 'user_reviewed', 'is_one_time_work', 'is_salary_disclosed')
+    list_filter = (
+        ('created_at', DateRangeFilterBuilder(title='공고 날짜')),
+        'is_salary_disclosed', 'is_one_time_work', 'platform', 'big_category',
+        'has_error', 'user_reviewed', 'error_corrected',
+        ('net_hourly_wage', NumericRangeFilterBuilder(title='시급(세후)')),
+    )
     search_fields = ('title', 'pharmacy_name', 'city', 'url')
     ordering = ('-created_at',)
     list_per_page = 50
@@ -65,11 +73,27 @@ class JobPostingAdmin(admin.ModelAdmin):
     def title_short(self, obj):
         return obj.title[:45] if obj.title else '-'
 
-    @admin.display(description='NET HOURLY WAGE')
+    @admin.display(description='시급(세후)')
     def hourly_wage_display(self, obj):
         if obj.is_one_time_work:
             return obj.one_time_hourly_wage if obj.one_time_hourly_wage is not None else '-'
         return obj.net_hourly_wage if obj.net_hourly_wage is not None else '-'
+
+    @admin.display(description='월급(세후)')
+    def net_salary_display(self, obj):
+        if obj.net_salary is not None:
+            return f'{obj.net_salary:.2f}'
+        return '-'
+
+    @admin.display(description='일회성', boolean=True)
+    def is_one_time_work_display(self, obj):
+        return obj.is_one_time_work
+
+    @admin.display(description='링크')
+    def link_display(self, obj):
+        if obj.url:
+            return format_html('<a href="{}" target="_blank">링크</a>', obj.url)
+        return '-'
 
 
 @admin.register(PipelineRun)

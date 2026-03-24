@@ -5,7 +5,7 @@ class JobPosting(models.Model):
     # --- Identity ---
     url = models.URLField(unique=True)
     platform = models.CharField(max_length=50, blank=True)
-    created_at = models.DateField(null=True, blank=True)
+    created_at = models.DateField(null=True, blank=True, verbose_name='공고 날짜')
     inserted_at = models.DateTimeField(auto_now_add=True)
 
     # --- Raw posting content ---
@@ -48,7 +48,7 @@ class JobPosting(models.Model):
     # --- Quality / audit flags ---
     has_error = models.BooleanField(default=False)
     error_corrected = models.BooleanField(default=False)
-    user_reviewed = models.BooleanField(default=False)
+    user_reviewed = models.BooleanField(default=False, verbose_name='관리자 리뷰')
     user_comment = models.TextField(blank=True)
 
     class Meta:
