@@ -41,7 +41,8 @@ yak-gongo/
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
 │   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
-│   │   └── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
+│   │   ├── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
+│   │   └── backfill_legacy_admincheck.py # 레거시 검토 공고에 AdminCheck 백필 (1회성)
 │   └── templates/admin/postings/pipelinerun/
 │       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
 │       ├── run_pipeline.html# 실행 옵션 폼 페이지
@@ -72,12 +73,10 @@ yak-gongo/
 ├── notion-stats/            # Notion 연동 통계 (차트 생성 + Notion 업로드)
 │   └── one_click_statistics.py  # 30종 이상 차트 생성 및 Notion 페이지 업데이트
 │
-├── legacy-files/               # 과거 프로젝트 파일 (레거시)
+├── legacy-files/               # 일회성 스크립트 모음 (레거시)
 │   └── one-time-data-migration/
-│       └── convert_pharm_urls.py  # 팜리크루트 URL JSON 생성 스크립트
-│
-├── scripts/
-│   └── migrate_json_to_sqlite.py  # 기존 JSON 데이터 → SQLite (1회성)
+│       ├── convert_pharm_urls.py        # 팜리크루트 URL JSON 생성 스크립트
+│       └── migrate_json_to_sqlite.py    # 기존 JSON 데이터 → SQLite (1회성)
 │
 ├── data/
 │   └── db.sqlite3           # SQLite DB
@@ -553,12 +552,16 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 
 ## 일회성 데이터 마이그레이션
 
+과거 데이터를 현재 스키마로 옮기기 위한 1회성 스크립트들은 `legacy-files/one-time-data-migration/`에 모여 있다.
+
+### JSON → SQLite 임포트
+
 기존 Notion 데이터를 JSON으로 변환한 파일이 `data/` 폴더에 있을 경우 아래 스크립트로 SQLite에 한 번에 임포트할 수 있다.
 
 ```bash
 # 파일명을 인자로 지정 (data/ 디렉토리 내 JSON 파일)
-python scripts/migrate_json_to_sqlite.py yakkook.json
-python scripts/migrate_json_to_sqlite.py output_error.json
+python legacy-files/one-time-data-migration/migrate_json_to_sqlite.py yakkook.json
+python legacy-files/one-time-data-migration/migrate_json_to_sqlite.py output_error.json
 ```
 
 - `output_error.json`, `output_error_3.json` 파일은 자동으로 `error_corrected=True`로 삽입
@@ -567,3 +570,19 @@ python scripts/migrate_json_to_sqlite.py output_error.json
 - 한국어 날짜 형식(`2024년 9월 19일`) 자동 변환
 - `"TRUE"` / `"FALSE"` 문자열 → Python bool 자동 변환
 - NaN → None 자동 변환
+
+### 레거시 AdminCheck 백필
+
+위 JSON 임포트로 들어온 공고들은 `user_reviewed=True`이지만 그에 대응하는 `AdminCheck` 레코드가 없다. `AdminCheck`는 **레코드 존재 = 검토 완료**를 의미하므로, `backfill_legacy_admincheck` 커맨드로 이 공고들에 AdminCheck를 일괄 생성하여 검토 상태를 일치시킨다.
+
+```bash
+# 대상 건수만 확인 (실제 생성 없음)
+python manage.py backfill_legacy_admincheck --dry-run
+
+# 실제 백필 실행
+python manage.py backfill_legacy_admincheck
+```
+
+- 대상: `user_reviewed=True` 이면서 `AdminCheck`가 없는 공고
+- 생성된 `AdminCheck`의 `checked_at`은 레거시 표식으로 `2000-01-01`(KST)로 설정하여 일반 검토 기록과 구분한다
+- `auto_now_add`가 적용된 `checked_at`을 우회하기 위해, `bulk_create`로 레코드를 만든 뒤 `.update()`로 레거시 시각을 덮어쓴다

@@ -88,7 +88,7 @@ REVIEW_PRESETS = OrderedDict([
     # ── 2단계: 에러 검토 ──
     ('error_review', {
         'label': '에러 미검토',
-        'description': 'has_error=True & user_reviewed=False. 에러 로그를 확인하고, 값이 맞으면 확인 처리, 틀리면 수정 후 저장.',
+        'description': 'has_error=True & 미검토(AdminCheck 없음). 에러 로그를 확인하고, 값이 맞으면 확인 처리, 틀리면 수정 후 저장.',
         'group': '2단계: 에러 검토',
         'columns': ['title', 'platform', 'created_at', 'net_hourly_wage', 'net_salary',
                      'weekday_work_days', 'weekend_work_days',
