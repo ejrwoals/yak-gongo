@@ -82,6 +82,8 @@ yak-gongo/
 ├── data/
 │   └── db.sqlite3           # SQLite DB
 │
+├── dev.sh                   # 개발 서버 실행 스크립트 (migrate + runserver)
+│
 └── requirements.txt
 ```
 
@@ -133,6 +135,17 @@ python manage.py createsuperuser
 ```
 
 ### 7. 서버 실행
+
+`dev.sh` 스크립트를 사용하면 마이그레이션 적용 후 개발 서버가 한 번에 실행된다. 포트를 인자로 넘길 수 있으며 생략 시 8000번을 사용한다.
+
+```bash
+./dev.sh          # http://127.0.0.1:8000
+./dev.sh 8080     # 포트 지정
+```
+
+스크립트는 프로젝트 루트의 `.venv` 가상환경(`/.venv/bin/python`)을 사용한다. `.venv`가 없으면 안내 메시지를 출력하고 종료한다.
+
+직접 실행하려면:
 
 ```bash
 python manage.py runserver
