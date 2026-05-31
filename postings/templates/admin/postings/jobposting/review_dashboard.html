@@ -31,12 +31,11 @@
       <select id="sort-field"></select>
     </label>
     <button id="sort-toggle" title="정렬 방향 전환">ASC</button>
+    <button id="bulk-mark-reviewed" style="display:none;">선택 항목 AdminCheck (<span id="selected-count">0</span>건)</button>
   </div>
   <div class="controls-right">
     <span id="auto-verify-progress" style="display:none;"></span>
-    <input id="auto-verify-limit" type="number" min="1" placeholder="개수(전체)" title="검토할 개수 (비우면 전체)" style="display:none;">
     <button id="auto-verify-btn" style="display:none;">🤖 LLM으로 자동 검토</button>
-    <button id="bulk-mark-reviewed" style="display:none;">선택 항목 AdminCheck (<span id="selected-count">0</span>건)</button>
   </div>
 </div>
 
@@ -112,7 +111,6 @@
   #auto-verify-btn:hover { background: #5a32a3; }
   #auto-verify-btn:disabled { background: #b9a6dd; cursor: default; }
   #auto-verify-progress { font-size: 12px; color: #555; }
-  #auto-verify-limit { width: 90px; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
 
   /* LLM 자동 검토 진행 모달 */
   .verify-modal {
@@ -331,7 +329,6 @@
     const verifyBtn = document.getElementById('auto-verify-btn');
     verifyBtn.style.display = canVerify ? '' : 'none';
     verifyBtn.disabled = false;
-    document.getElementById('auto-verify-limit').style.display = canVerify ? '' : 'none';
     document.getElementById('auto-verify-progress').style.display = 'none';
   }
 
@@ -442,8 +439,6 @@
     const verifyBtn = document.getElementById('auto-verify-btn');
     if (verifyBtn && verifyBtn.style.display !== 'none') {
       verifyBtn.textContent = checked.length > 0 ? `🤖 선택 ${checked.length}건 검토` : '🤖 LLM으로 자동 검토';
-      // 선택이 있으면 개수 입력은 무시되므로 흐리게
-      document.getElementById('auto-verify-limit').style.opacity = checked.length > 0 ? '0.4' : '1';
     }
   }
 
@@ -591,18 +586,13 @@
       return;
     }
 
-    // 선택이 없으면 전체 후보(개수 제한 적용). 후보는 최신순이라 앞에서부터 N건.
+    // 선택이 없으면 전체 후보를 검토.
     fetch(`verify-candidates/?preset=${preset}`)
       .then(r => r.json())
       .then(data => {
-        let items = data.items || [];
+        const items = data.items || [];
         if (items.length === 0) { alert('검토할 공고가 없습니다.'); return; }
-        const limitRaw = parseInt(document.getElementById('auto-verify-limit').value, 10);
-        const totalCandidates = items.length;
-        if (Number.isInteger(limitRaw) && limitRaw > 0) items = items.slice(0, limitRaw);
-        const scopeMsg = items.length < totalCandidates
-          ? `전체 ${totalCandidates}건 중 ${items.length}건` : `${items.length}건`;
-        runVerify(preset, presetLabel, items, scopeMsg);
+        runVerify(preset, presetLabel, items, `${items.length}건`);
       })
       .catch(() => alert('검토 대상 조회 실패'));
   }

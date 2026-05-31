@@ -86,8 +86,8 @@ REVIEW_PRESETS = OrderedDict([
                      'is_salary_disclosed', 'user_reviewed'],
         'editable': ['is_salary_disclosed', 'user_reviewed'],
         'expandable': [],
-        'default_sort': 'inserted_at',
-        'default_sort_dir': 'asc',
+        'default_sort': 'updated_at',
+        'default_sort_dir': 'desc',
     }),
 
     # ── 2단계: 에러 검토 ──
@@ -101,8 +101,8 @@ REVIEW_PRESETS = OrderedDict([
                      'user_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['gpt_error_log', 'gpt_summary', 'body'],
-        'default_sort': 'inserted_at',
-        'default_sort_dir': 'asc',
+        'default_sort': 'updated_at',
+        'default_sort_dir': 'desc',
     }),
 
     # ── 3단계: 근무일 이상치 ──
@@ -168,8 +168,8 @@ REVIEW_PRESETS = OrderedDict([
                      'user_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body'],
-        'default_sort': 'inserted_at',
-        'default_sort_dir': 'asc',
+        'default_sort': 'updated_at',
+        'default_sort_dir': 'desc',
     }),
 
     # ── 최종 점검 ──
@@ -181,7 +181,7 @@ REVIEW_PRESETS = OrderedDict([
                      'user_reviewed', 'user_comment'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body', 'gpt_summary'],
-        'default_sort': 'inserted_at',
+        'default_sort': 'updated_at',
         'default_sort_dir': 'desc',
     }),
 ])
