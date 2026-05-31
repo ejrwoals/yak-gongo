@@ -33,6 +33,9 @@
     <button id="sort-toggle" title="정렬 방향 전환">ASC</button>
   </div>
   <div class="controls-right">
+    <span id="auto-verify-progress" style="display:none;"></span>
+    <input id="auto-verify-limit" type="number" min="1" placeholder="개수(전체)" title="검토할 개수 (비우면 전체)" style="display:none;">
+    <button id="auto-verify-btn" style="display:none;">🤖 LLM으로 자동 검토</button>
     <button id="bulk-mark-reviewed" style="display:none;">선택 항목 AdminCheck (<span id="selected-count">0</span>건)</button>
   </div>
 </div>
@@ -45,6 +48,22 @@
 <!-- 하단 네비게이션 -->
 <div style="margin-top: 16px;">
   <a href="{% url 'admin:postings_jobposting_changelist' %}" class="button">목록으로</a>
+</div>
+
+<!-- LLM 자동 검토 진행 모달 -->
+<div id="verify-modal" class="verify-modal" style="display:none;">
+  <div class="verify-modal-box">
+    <div class="verify-modal-header">
+      <strong id="verify-modal-title">🤖 LLM 자동 검토</strong>
+      <div class="verify-modal-actions">
+        <button id="verify-stop-btn" class="verify-btn-stop">중지</button>
+        <button id="verify-close-btn" class="verify-btn-close" disabled>닫기</button>
+      </div>
+    </div>
+    <div class="verify-progress-track"><div id="verify-progress-bar" class="verify-progress-bar"></div></div>
+    <div id="verify-summary" class="verify-summary"></div>
+    <div id="verify-log" class="verify-log"></div>
+  </div>
 </div>
 
 <style>
@@ -86,6 +105,75 @@
     border-radius: 4px; cursor: pointer; font-size: 13px;
   }
   #bulk-mark-reviewed:hover { background: #218838; }
+  #auto-verify-btn {
+    padding: 6px 16px; background: #6f42c1; color: #fff; border: none;
+    border-radius: 4px; cursor: pointer; font-size: 13px;
+  }
+  #auto-verify-btn:hover { background: #5a32a3; }
+  #auto-verify-btn:disabled { background: #b9a6dd; cursor: default; }
+  #auto-verify-progress { font-size: 12px; color: #555; }
+  #auto-verify-limit { width: 90px; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+
+  /* LLM 자동 검토 진행 모달 */
+  .verify-modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .verify-modal-box {
+    background: #fff; width: min(720px, 92vw); max-height: 86vh;
+    border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .verify-modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; background: #6f42c1; color: #fff;
+  }
+  .verify-modal-header strong { font-size: 15px; }
+  .verify-modal-actions { display: flex; gap: 8px; }
+  .verify-btn-stop, .verify-btn-close {
+    padding: 5px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;
+  }
+  .verify-btn-stop { background: #dc3545; color: #fff; }
+  .verify-btn-stop:hover { background: #c82333; }
+  .verify-btn-stop:disabled { background: #e7969e; cursor: default; }
+  .verify-btn-close { background: #e9ecef; color: #333; }
+  .verify-btn-close:hover { background: #d3d9df; }
+  .verify-btn-close:disabled { opacity: 0.5; cursor: default; }
+
+  .verify-progress-track { height: 10px; background: #eee; }
+  .verify-progress-bar {
+    height: 100%; width: 0; background: linear-gradient(90deg, #6f42c1, #9461e0);
+    transition: width 0.25s ease;
+  }
+  .verify-summary {
+    padding: 10px 18px; font-size: 13px; color: #333; border-bottom: 1px solid #eee;
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  }
+  .verify-summary .vs-count { font-weight: bold; }
+  .verify-summary .vs-ok { color: #28a745; }
+  .verify-summary .vs-error { color: #d9480f; }
+  .verify-summary .vs-failed { color: #868e96; }
+  .verify-summary .vs-skipped { color: #adb5bd; }
+
+  .verify-log { overflow-y: auto; padding: 6px 0; }
+  .verify-log-row {
+    display: grid; grid-template-columns: 64px 70px 1fr; gap: 8px; align-items: start;
+    padding: 7px 18px; border-bottom: 1px solid #f2f2f2; font-size: 12.5px;
+  }
+  .verify-log-row:nth-child(even) { background: #fafafa; }
+  .verify-log-row .vbadge {
+    text-align: center; padding: 2px 0; border-radius: 10px; font-size: 11px; font-weight: bold; color: #fff;
+  }
+  .verify-log-row.status-ok .vbadge { background: #28a745; }
+  .verify-log-row.status-error .vbadge { background: #d9480f; }
+  .verify-log-row.status-failed .vbadge { background: #868e96; }
+  .verify-log-row.status-skipped .vbadge { background: #ced4da; color: #555; }
+  .verify-log-row.status-running .vbadge { background: #6f42c1; }
+  .verify-log-row .vid { color: #888; font-variant-numeric: tabular-nums; }
+  .verify-log-row .vmain { min-width: 0; }
+  .verify-log-row .vtitle { color: #333; }
+  .verify-log-row .vnote { color: #d9480f; font-size: 12px; margin-top: 2px; word-break: break-word; }
+  .verify-log-row.status-ok .vnote { color: #2b8a3e; }
 
   /* 테이블 */
   .review-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -156,6 +244,8 @@
 <script>
 (function() {
   const PRESETS = {{ presets_json|safe }};
+  const VERIFY_PRESET_KEYS = {{ verify_preset_keys_json|safe }};
+  const VERIFY_BATCH_SIZE = 5;
   const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
 
   const state = {
@@ -221,7 +311,7 @@
     // 정렬 드롭다운 업데이트
     const sortSelect = document.getElementById('sort-field');
     sortSelect.innerHTML = '';
-    const cols = preset.columns.concat(['inserted_at']);
+    const cols = preset.columns.concat(['inserted_at', 'updated_at']);
     const seen = new Set();
     cols.forEach(field => {
       if (seen.has(field)) return;
@@ -235,6 +325,14 @@
 
     document.getElementById('sort-toggle').textContent = state.sortDir.toUpperCase();
     document.getElementById('controls-bar').style.display = 'flex';
+
+    // LLM 자동 검토 버튼 노출 제어 (검산 가능한 3단계 프리셋에서만)
+    const canVerify = VERIFY_PRESET_KEYS.includes(key);
+    const verifyBtn = document.getElementById('auto-verify-btn');
+    verifyBtn.style.display = canVerify ? '' : 'none';
+    verifyBtn.disabled = false;
+    document.getElementById('auto-verify-limit').style.display = canVerify ? '' : 'none';
+    document.getElementById('auto-verify-progress').style.display = 'none';
   }
 
   // 정렬 컨트롤
@@ -339,6 +437,14 @@
     const bulkBtn = document.getElementById('bulk-mark-reviewed');
     countEl.textContent = checked.length;
     bulkBtn.style.display = checked.length > 0 ? '' : 'none';
+
+    // 선택이 있으면 자동검토 버튼이 '선택 N건 검토'로, 없으면 전체 검토로
+    const verifyBtn = document.getElementById('auto-verify-btn');
+    if (verifyBtn && verifyBtn.style.display !== 'none') {
+      verifyBtn.textContent = checked.length > 0 ? `🤖 선택 ${checked.length}건 검토` : '🤖 LLM으로 자동 검토';
+      // 선택이 있으면 개수 입력은 무시되므로 흐리게
+      document.getElementById('auto-verify-limit').style.opacity = checked.length > 0 ? '0.4' : '1';
+    }
   }
 
   // 벌크 리뷰 완료
@@ -347,6 +453,159 @@
     if (pks.length === 0) return;
     markReviewed(pks);
   });
+
+  // ── LLM 자동 검토 ───────────────────────────────────────────
+  const STATUS_LABEL = { ok: '정상', error: '에러', failed: '실패', skipped: '스킵', running: '검토중' };
+  const verifyRun = { running: false, stop: false };
+
+  document.getElementById('auto-verify-btn').addEventListener('click', autoVerifyStep3);
+  document.getElementById('verify-stop-btn').addEventListener('click', function() {
+    verifyRun.stop = true;
+    this.disabled = true;
+    this.textContent = '중지 중...';
+  });
+  document.getElementById('verify-close-btn').addEventListener('click', function() {
+    if (verifyRun.running) return;
+    document.getElementById('verify-modal').style.display = 'none';
+  });
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function verifyRowHtml(item) {
+    const note = item.note ? `<div class="vnote">${escapeHtml(item.note)}</div>` : '';
+    return `<span class="vbadge">${STATUS_LABEL[item.status] || item.status}</span>` +
+           `<span class="vid">#${item.id}</span>` +
+           `<div class="vmain"><span class="vtitle">${escapeHtml(item.title || '')}</span>${note}</div>`;
+  }
+
+  function verifyAppendRow(item) {
+    const log = document.getElementById('verify-log');
+    const row = document.createElement('div');
+    row.className = 'verify-log-row status-' + item.status;
+    row.innerHTML = verifyRowHtml(item);
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    return row;
+  }
+
+  function verifySetRow(row, item) {
+    row.className = 'verify-log-row status-' + item.status;
+    row.innerHTML = verifyRowHtml(item);
+  }
+
+  function verifyUpdateSummary(total, tally) {
+    document.getElementById('verify-summary').innerHTML =
+      `<span class="vs-count">진행 ${tally.done}/${total}</span>` +
+      `<span class="vs-count vs-ok">정상 ${tally.ok}</span>` +
+      `<span class="vs-count vs-error">에러 ${tally.error}</span>` +
+      `<span class="vs-count vs-failed">실패 ${tally.failed}</span>` +
+      `<span class="vs-count vs-skipped">스킵 ${tally.skipped}</span>`;
+    document.getElementById('verify-progress-bar').style.width =
+      (total ? Math.round(tally.done / total * 100) : 0) + '%';
+  }
+
+  function runVerify(preset, presetLabel, items, scopeMsg) {
+    if (!items.length) { alert('검토할 공고가 없습니다.'); return; }
+    if (!confirm(`'${presetLabel}' ${scopeMsg}을 Gemini로 자동 검토합니다.\nAPI 비용이 발생하며 시간이 걸릴 수 있습니다. 진행할까요?`)) return;
+
+    const btn = document.getElementById('auto-verify-btn');
+    const total = items.length;
+    const tally = { ok: 0, error: 0, failed: 0, skipped: 0, done: 0 };
+    verifyRun.running = true;
+    verifyRun.stop = false;
+    btn.disabled = true;
+
+    document.getElementById('verify-modal-title').textContent = `🤖 LLM 자동 검토 — ${presetLabel}`;
+    document.getElementById('verify-log').innerHTML = '';
+    document.getElementById('verify-progress-bar').style.width = '0';
+    const stopBtn = document.getElementById('verify-stop-btn');
+    const closeBtn = document.getElementById('verify-close-btn');
+    stopBtn.disabled = false; stopBtn.textContent = '중지'; stopBtn.style.display = '';
+    closeBtn.disabled = true;
+    document.getElementById('verify-modal').style.display = 'flex';
+    verifyUpdateSummary(total, tally);
+
+    function finish(stopped) {
+      verifyRun.running = false;
+      stopBtn.style.display = 'none';
+      closeBtn.disabled = false;
+      document.getElementById('verify-summary').insertAdjacentHTML(
+        'beforeend', `<span class="vs-count">${stopped ? '⏹ 중지됨' : '✅ 완료'}</span>`);
+      btn.disabled = false;
+      loadCounts();
+      loadData();
+    }
+
+    function processNext(i) {
+      if (verifyRun.stop) { finish(true); return; }
+      if (i >= items.length) { finish(false); return; }
+
+      const cur = items[i];
+      const row = verifyAppendRow({ id: cur.id, status: 'running', title: cur.title || '(제목 없음)', note: '검토 중…' });
+
+      fetch('auto-verify/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ preset: preset, ids: [cur.id] }),
+      })
+        .then(r => r.json())
+        .then(res => {
+          const item = (res.ok && res.results && res.results[0])
+            || { id: cur.id, status: 'failed', note: res.error || '요청 실패' };
+          if (!item.title) item.title = cur.title || '';   // 응답에 제목 없으면 알던 제목 유지
+          verifySetRow(row, item);
+          if (tally[item.status] !== undefined) tally[item.status]++;
+          tally.done++;
+          verifyUpdateSummary(total, tally);
+          processNext(i + 1);
+        })
+        .catch(() => {
+          verifySetRow(row, { id: cur.id, status: 'failed', title: cur.title || '', note: '네트워크 오류' });
+          tally.failed++; tally.done++;
+          verifyUpdateSummary(total, tally);
+          processNext(i + 1);
+        });
+    }
+    processNext(0);
+  }
+
+  function autoVerifyStep3() {
+    const preset = state.preset;
+    if (!preset || !VERIFY_PRESET_KEYS.includes(preset)) return;
+    const presetLabel = PRESETS[preset] ? PRESETS[preset].label : preset;
+
+    // 체크박스로 선택한 행이 있으면 그 항목만 검토 (개수 입력보다 우선)
+    // 제목은 테이블 행에서 읽어 온다.
+    const checked = Array.from(document.querySelectorAll('.row-select:checked'));
+    if (checked.length > 0) {
+      const items = checked.map(cb => {
+        const tr = cb.closest('tr.review-row');
+        const titleEl = tr && (tr.querySelector('.cell-title') || tr.querySelectorAll('td')[1]);
+        return { id: parseInt(cb.value), title: titleEl ? titleEl.textContent.trim() : '' };
+      });
+      runVerify(preset, presetLabel, items, `선택한 ${items.length}건`);
+      return;
+    }
+
+    // 선택이 없으면 전체 후보(개수 제한 적용). 후보는 최신순이라 앞에서부터 N건.
+    fetch(`verify-candidates/?preset=${preset}`)
+      .then(r => r.json())
+      .then(data => {
+        let items = data.items || [];
+        if (items.length === 0) { alert('검토할 공고가 없습니다.'); return; }
+        const limitRaw = parseInt(document.getElementById('auto-verify-limit').value, 10);
+        const totalCandidates = items.length;
+        if (Number.isInteger(limitRaw) && limitRaw > 0) items = items.slice(0, limitRaw);
+        const scopeMsg = items.length < totalCandidates
+          ? `전체 ${totalCandidates}건 중 ${items.length}건` : `${items.length}건`;
+        runVerify(preset, presetLabel, items, scopeMsg);
+      })
+      .catch(() => alert('검토 대상 조회 실패'));
+  }
 
   // dirty 추적 초기화 (데이터 로드 후 호출)
   function initDirtyTracking() {

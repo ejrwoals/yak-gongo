@@ -13,7 +13,7 @@ from google import genai
 
 from .tasks import run_task_1, run_task_2, run_task_3, run_task_4, run_task_5
 from .validator import error_check
-from .salary import to_net_salary
+from .salary import to_net_salary, ceil_hourly_wage
 
 
 def process_posting(
@@ -199,6 +199,10 @@ def process_posting(
         result['meal_info'] = str(t5.get('식사 관련') or '')
         result['gpt_output_log'] += f'[T5] {t5}\n'
         _log(f'  [Task5] 월차: {result["monthly_leave"]} | 경력: {result["experience_required"] or "무관"} | 식사: {result["meal_info"] or "없음"}')
+
+    # 시급 올림 보정 (계산식이 시급을 구조적으로 과소평가하는 점 보정)
+    result['net_hourly_wage'] = ceil_hourly_wage(result['net_hourly_wage'])
+    result['one_time_hourly_wage'] = ceil_hourly_wage(result['one_time_hourly_wage'])
 
     # 요약문 생성
     hw = result.get('net_hourly_wage')

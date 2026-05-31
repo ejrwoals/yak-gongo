@@ -17,6 +17,7 @@ from .models import AdminCheck, JobPosting, PipelineRun
 from .review_presets import (
     FIELD_META,
     REVIEW_PRESETS,
+    VERIFY_PRESET_KEYS,
     get_grouped_presets,
     get_preset_queryset,
     get_sort_expression,
@@ -122,6 +123,10 @@ class JobPostingAdmin(admin.ModelAdmin):
                  name='jobposting_review_mark'),
             path('review/counts/', self.admin_site.admin_view(self.review_counts_view),
                  name='jobposting_review_counts'),
+            path('review/verify-candidates/', self.admin_site.admin_view(self.review_verify_candidates_view),
+                 name='jobposting_review_verify_candidates'),
+            path('review/auto-verify/', self.admin_site.admin_view(self.review_auto_verify_view),
+                 name='jobposting_review_auto_verify'),
         ]
         return custom + urls
 
@@ -132,6 +137,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             'title': '공고 리뷰 대시보드',
             'opts': self.model._meta,
             'grouped_presets': get_grouped_presets(),
+            'verify_preset_keys_json': json.dumps(VERIFY_PRESET_KEYS),
             'presets_json': json.dumps({
                 key: {
                     'label': p['label'],
@@ -156,8 +162,8 @@ class JobPostingAdmin(admin.ModelAdmin):
         sort_dir = request.GET.get('sort_dir', preset['default_sort_dir'])
         page_num = request.GET.get('page', '1')
 
-        # 정렬 필드 검증
-        valid_sort_fields = preset['columns'] + ['inserted_at']
+        # 정렬 필드 검증 (모든 프리셋에서 등록/수정 시각으로도 정렬 가능)
+        valid_sort_fields = preset['columns'] + ['inserted_at', 'updated_at']
         if sort_field not in valid_sort_fields:
             sort_field = preset['default_sort']
         if sort_dir not in ('asc', 'desc'):
@@ -291,11 +297,14 @@ class JobPostingAdmin(admin.ModelAdmin):
         if not pks:
             return JsonResponse({'ok': False, 'error': 'pks required'}, status=400)
 
-        existing = set(AdminCheck.objects.filter(posting_id__in=pks).values_list('posting_id', flat=True))
-        new_checks = [AdminCheck(posting_id=pk) for pk in pks if pk not in existing]
+        existing_qs = AdminCheck.objects.filter(posting_id__in=pks)
+        existing_ids = set(existing_qs.values_list('posting_id', flat=True))
+        new_checks = [AdminCheck(posting_id=pk, source=AdminCheck.SOURCE_ADMIN)
+                      for pk in pks if pk not in existing_ids]
         AdminCheck.objects.bulk_create(new_checks)
-        count = len(new_checks)
-        return JsonResponse({'ok': True, 'count': count})
+        # 사람이 직접 검토 → 기존 LLM 자동 검토 건은 'admin' 으로 승격
+        upgraded = existing_qs.filter(source=AdminCheck.SOURCE_LLM).update(source=AdminCheck.SOURCE_ADMIN)
+        return JsonResponse({'ok': True, 'count': len(new_checks), 'upgraded': upgraded})
 
     def review_counts_view(self, request):
         """AJAX: 프리셋별 건수 반환."""
@@ -304,6 +313,81 @@ class JobPostingAdmin(admin.ModelAdmin):
         for key in REVIEW_PRESETS:
             counts[key] = get_preset_queryset(key, base_qs).count()
         return JsonResponse(counts)
+
+    def review_verify_candidates_view(self, request):
+        """AJAX GET: 현재 프리셋의 LLM 자동 검토 대상 공고 id 목록 반환."""
+        preset_key = request.GET.get('preset', '')
+        if preset_key not in VERIFY_PRESET_KEYS:
+            return JsonResponse({'error': 'invalid preset'}, status=400)
+        items = [
+            {'id': r['id'], 'title': (r['title'] or '').strip()[:60]}
+            for r in get_preset_queryset(preset_key, JobPosting.objects.all()).values('id', 'title')
+        ]
+        return JsonResponse({'items': items, 'total': len(items)})
+
+    def review_auto_verify_view(self, request):
+        """AJAX POST: 주어진 공고 id 배치를 LLM(Gemini)으로 검산.
+
+        맞으면 AdminCheck(source='llm') 생성, 틀리면 gpt_error_log 기록(→ has_error=True).
+        """
+        if request.method != 'POST':
+            return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'ok': False, 'error': 'invalid JSON'}, status=400)
+
+        preset_key = data.get('preset', '')
+        ids = data.get('ids', [])
+        if preset_key not in VERIFY_PRESET_KEYS:
+            return JsonResponse({'ok': False, 'error': 'invalid preset'}, status=400)
+        if not ids:
+            return JsonResponse({'ok': False, 'error': 'ids required'}, status=400)
+
+        # 지연 import: Django 로드 시 google-genai 까지 끌어오지 않도록
+        from django.conf import settings
+        from google import genai
+        from .review_verify import apply_verdict, verify_posting
+
+        if not settings.GOOGLE_API_KEY:
+            return JsonResponse({'ok': False, 'error': 'GOOGLE_API_KEY 미설정'}, status=500)
+
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        model_name = settings.LLM_MODEL
+
+        results = []
+        counts = {'ok': 0, 'error': 0, 'failed': 0, 'skipped': 0}
+        for pk in ids:
+            posting = JobPosting.objects.filter(pk=pk).select_related('admin_check').first()
+            if posting is None:
+                results.append({'id': pk, 'status': 'failed', 'title': '', 'note': '공고 없음'})
+                counts['failed'] += 1
+                continue
+            title = (posting.title or '').strip()[:50]
+            # 이미 처리된 건(에러 표시됨 or 검토 완료)은 건너뜀
+            if posting.has_error or AdminCheck.objects.filter(posting_id=pk).exists():
+                results.append({'id': pk, 'status': 'skipped', 'title': title, 'note': '이미 처리됨'})
+                counts['skipped'] += 1
+                continue
+            note = ''
+            try:
+                verdict = verify_posting(posting, preset_key, client, model_name)
+                status = apply_verdict(posting, verdict)
+                if status == 'error':
+                    # gpt_error_log 첫 줄(요약)을 진행 로그용 사유로
+                    note = (posting.gpt_error_log or '').strip().split('\n', 1)[0][:120]
+                elif status == 'failed':
+                    note = verdict.get('_fail', 'LLM 응답 파싱 실패') if isinstance(verdict, dict) else 'LLM 응답 없음'
+            except Exception as e:  # noqa: BLE001 - 한 건 실패가 배치 전체를 막지 않도록
+                status = 'failed'
+                note = str(e)[:120]
+                print(f'[auto-verify ERROR] pk={pk}: {e}')
+            results.append({'id': pk, 'status': status, 'title': title, 'note': note})
+            if status in counts:
+                counts[status] += 1
+
+        # 주의: counts 를 최상위로 펼치면 'ok' 키가 성공 플래그와 충돌하므로 'counts' 로 감싼다.
+        return JsonResponse({'ok': True, 'results': results, 'counts': counts})
 
     @staticmethod
     def _format_display(value, field_type, field_name=''):

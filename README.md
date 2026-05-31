@@ -36,12 +36,15 @@ yak-gongo/
 ├── postings/                # 핵심 앱: 공고 DB + Admin
 │   ├── models.py            # JobPosting, AdminCheck, PipelineRun
 │   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI
-│   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼)
+│   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼, LLM 검토 대상/포커스)
+│   ├── review_verify.py     # 3단계 이상치 공고 LLM(Gemini) 재검산 서비스
 │   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
 │   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
 │   │   ├── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
+│   │   ├── auto_verify_step3.py # 3단계 이상치 공고 LLM 일괄 자동 검토 (CLI)
+│   │   ├── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
 │   │   └── backfill_legacy_admincheck.py # 레거시 검토 공고에 AdminCheck 백필 (1회성)
 │   └── templates/admin/postings/pipelinerun/
 │       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
@@ -53,7 +56,7 @@ yak-gongo/
 │   ├── tasks.py             # run_task_1() ~ run_task_5() — Gemini API 호출
 │   ├── runner.py            # process_posting() — 단일 공고 오케스트레이터
 │   ├── validator.py         # error_check() — LLM 출력 일관성 검증
-│   └── salary.py            # to_net_salary() — 세후 월급 계산
+│   └── salary.py            # to_net_salary() — 세후 월급 계산, ceil_hourly_wage() — 시급 올림 보정
 │
 ├── scraper/                 # 웹 스크래퍼 (Selenium)
 │   ├── yakdap.py            # 약문약답 스크래퍼
@@ -249,6 +252,8 @@ validator.error_check(): 주당 근무 시간 재계산 및 오류 감지
     ↓
 salary.to_net_salary(): 세후 월급 산출 → 세후 시급(net_hourly_wage) = 세후 월급 / 월 근무 시간
     ↓
+salary.ceil_hourly_wage(): 세후 시급·일회성 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정
+    ↓
 JobPosting DB 저장
     ↓
 PipelineRun 이력 기록
@@ -334,6 +339,62 @@ http://localhost:8000/admin/ 접속 후 사용.
 3. 시급이 잘못 계산된 경우 직접 수정
 4. `error_corrected` 체크 → `user_reviewed` 체크 → 저장
 
+정렬은 모든 프리셋에서 프리셋 컬럼 외에 등록 시각(`inserted_at`)·수정 시각(`updated_at`)으로도 가능하다.
+
+### LLM 자동 검토 (3단계 이상치 프리셋)
+
+3단계: 비에러 이상치 프리셋 중 LLM 추출값을 재검산할 수 있는 4개 탭(`근무일 이상치`, `일회성 시급 검토`, `지속성 시급 검토`, `세전 확인`)에는 **🤖 LLM으로 자동 검토** 버튼이 노출된다 (`지역 미분류`는 `city`가 LLM 추출이 아니라 `geo/mapping` 변환 결과라 제외). LLM 검토 대상 프리셋 목록은 `review_presets.py`의 `VERIFY_PRESET_KEYS`로 관리한다.
+
+동작 방식:
+
+1. 버튼을 누르면 현재 프리셋의 후보 공고를 모아 실시간 진행 모달이 뜬다. 처리 건수 한도를 지정하거나, 표에서 체크한 행만 검토할 수 있다.
+2. 공고당 Gemini 1회 호출로, **새로 추출하지 않고** 이미 DB에 저장된 값이 본문과 일치하는지만 판정한다. 기존 추출 파이프라인(prompts/tasks)을 재실행하지 않고 도메인 규칙만 압축한 단일 검산 프롬프트(`review_verify.VERIFY_SYSTEM_PROMPT`)를 사용한다. 프리셋별 `verify_focus` 힌트로 검토 중점을 안내한다.
+3. 판정 결과에 따라:
+   - **일치** → `AdminCheck(source='llm')` 생성 → 검토 완료로 처리되어 3단계 집합에서 빠진다.
+   - **불일치** → 틀린 필드/제안값/사유를 `gpt_error_log`에 기록 → `save()`가 `has_error=True`로 설정 → **2단계(에러 검토)로 이동**하여 사람이 직접 수정한다.
+   - **실패**(JSON 파싱 실패, MAX_TOKENS, 빈 응답 등) → 변경 없이 사유만 모달 로그에 표시.
+4. 이미 처리된 공고(`has_error=True` 또는 `AdminCheck` 존재)는 건너뛴다. 모달은 항목별 로그(제목 + 사유)와 함께 중지/닫기를 지원한다.
+
+핵심 로직은 `postings/review_verify.py`의 `verify_posting()` / `apply_verdict()`에 있으며, 웹 버튼과 CLI 커맨드(`auto_verify_step3`)가 동일 로직을 공유한다.
+
+**Admin 커스텀 URL (리뷰 대시보드):**
+
+| URL 패턴 | 설명 |
+|---|---|
+| `review/verify-candidates/` | AJAX GET: 현재 프리셋의 LLM 검토 대상 공고 id·제목 목록 |
+| `review/auto-verify/` | AJAX POST: 주어진 공고 id 배치를 Gemini로 검산하고 결과 반환 |
+
+> 사람이 직접 `user_reviewed`를 체크하거나 일괄 검토하면, 기존 `AdminCheck(source='llm')`은 `source='admin'`으로 승격된다 (검토 주체 추적).
+
+### 시급 올림 보정 일괄 적용
+
+시급 계산식이 시급을 구조적으로 살짝 낮게 평가해(예: 실제 4.0 → 3.993 저장) LLM 자동 검토에서 불필요하게 '틀림'으로 잡히는 문제가 있었다. `ceil_hourly_wages` 커맨드로 기존 데이터의 세후 시급(`net_hourly_wage`)·일회성 시급(`one_time_hourly_wage`)을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정한다. 신규 수집분은 파이프라인에서 자동 보정된다.
+
+```bash
+# 변경 없이 미리보기
+python manage.py ceil_hourly_wages --dry-run
+
+# 실제 적용 (bulk_update 사용 → save() 부작용 없이 시급만 갱신)
+python manage.py ceil_hourly_wages
+```
+
+### LLM 자동 검토 일괄 실행 (CLI)
+
+웹 대시보드 버튼과 동일 로직을 CLI로 일괄 실행한다 (대량 처리·디버깅용).
+
+```bash
+python manage.py auto_verify_step3                       # 4개 프리셋 전체
+python manage.py auto_verify_step3 --preset workdays_outlier
+python manage.py auto_verify_step3 --limit 20
+```
+
+| 옵션 | 설명 | 기본값 |
+|---|---|---|
+| `--preset` | 특정 프리셋만 검토 (`VERIFY_PRESET_KEYS` 중 하나) | 4개 전체 |
+| `--limit` | 최대 처리 건수 | 전체 |
+
+`GOOGLE_API_KEY` 설정이 필요하다 ([환경 변수](#환경-변수) 참고).
+
 ---
 
 ## 통계 대시보드
@@ -396,7 +457,7 @@ python manage.py run_statistics --output-dir /path/to/output
 | `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 (`raw_decode`로 첫 번째 유효 JSON만 추출) |
 | `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. 급여 미명시 공고는 `None`을 반환하여 저장을 건너뜀. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간 재계산 |
-| `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환 |
+| `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환. `ceil_hourly_wage(value)` — 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정 |
 
 **직접 사용 예시:**
 
@@ -469,6 +530,7 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 - **일회성 근무**: Task 2에서 LLM이 직접 계산
 - 시급 유효 범위: `1.8만원 ~ 5.5만원` (settings.py에서 조정 가능)
 - 주당 최대 근무 시간: `56시간`
+- **시급 올림 보정**: 계산식이 시급을 구조적으로 살짝 낮게 평가하므로(예: 실제 4.0 → 3.993), 세후 시급·일회성 시급을 소수점 셋째 자리에서 올림(둘째 자리까지)하여 저장한다 (`salary.ceil_hourly_wage`). 셋째 자리가 0이면 올림이 적용되지 않아 값이 그대로 유지된다(예: 4.28 → 4.28)
 
 ### 세후 월급 공식
 
@@ -491,7 +553,8 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `url` | URLField (unique) | 공고 원본 URL |
 | `platform` | CharField | `약문약답` / `팜리크루트` |
 | `created_at` | DateField | 공고 등록일 |
-| `inserted_at` | DateTimeField | DB 저장 시각 (자동) |
+| `inserted_at` | DateTimeField | DB 저장 시각 (`auto_now_add`) |
+| `updated_at` | DateTimeField | 마지막 수정 시각 (`auto_now`) |
 | `title` | TextField | 공고 제목 |
 | `pharmacy_name` | CharField | 약국 이름 |
 | `body` | TextField | 공고 본문 (LLM 입력 원문) |
@@ -526,12 +589,15 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 
 ### AdminCheck
 
-관리자 검토 완료 기록. **레코드 존재 = 검토 완료**, 레코드 없음 = 미검토. 리뷰 대시보드에서 인라인 저장 또는 일괄 체크 시 자동 생성된다.
+관리자 검토 완료 기록. **레코드 존재 = 검토 완료**, 레코드 없음 = 미검토. 리뷰 대시보드에서 인라인 저장·일괄 체크 시, 또는 LLM 자동 검토에서 값이 본문과 일치할 때 자동 생성된다.
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `posting` | OneToOneField → JobPosting | 검토 대상 공고 (1:1) |
 | `checked_at` | DateTimeField | 검토 완료 시각 (자동 기록) |
+| `source` | CharField (choices) | 검토 주체 — `admin`(관리자 직접 검토) / `llm`(LLM 자동 검토). 기본값 `admin` |
+
+사람이 직접 검토(`user_reviewed` 체크 또는 일괄 검토)하면 기존 `source='llm'` 레코드는 `source='admin'`으로 승격된다.
 
 ### PipelineRun
 

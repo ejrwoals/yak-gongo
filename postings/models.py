@@ -7,6 +7,7 @@ class JobPosting(models.Model):
     platform = models.CharField(max_length=50, blank=True)
     created_at = models.DateField(null=True, blank=True, verbose_name='공고 날짜')
     inserted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True, verbose_name='수정 시각')
 
     # --- Raw posting content ---
     title = models.TextField(blank=True)
@@ -73,9 +74,11 @@ class JobPosting(models.Model):
             if weekday_h is not None or weekend_h is not None:
                 self.hours_per_week = total
         super().save(*args, **kwargs)
-        # user_reviewed=True면 AdminCheck 레코드 자동 생성
+        # user_reviewed=True면 AdminCheck 레코드 자동 생성 (사람 검토 → source='admin' 으로 승격)
         if self.user_reviewed:
-            AdminCheck.objects.get_or_create(posting=self)
+            AdminCheck.objects.update_or_create(
+                posting=self, defaults={'source': AdminCheck.SOURCE_ADMIN}
+            )
 
     def __str__(self):
         return f"[{self.platform}] {self.title[:40]}"
@@ -83,11 +86,22 @@ class JobPosting(models.Model):
 
 class AdminCheck(models.Model):
     """관리자가 검토 완료한 공고 기록. 레코드 존재 = 검토 완료, 없음 = 미검토."""
+    SOURCE_ADMIN = 'admin'
+    SOURCE_LLM = 'llm'
+    SOURCE_CHOICES = [
+        (SOURCE_ADMIN, '관리자 검토'),
+        (SOURCE_LLM, 'LLM 자동 검토'),
+    ]
+
     posting = models.OneToOneField(JobPosting, on_delete=models.CASCADE, related_name='admin_check')
     checked_at = models.DateTimeField(auto_now_add=True)
+    source = models.CharField(
+        max_length=20, choices=SOURCE_CHOICES, default=SOURCE_ADMIN,
+        verbose_name='검토 주체',
+    )
 
     def __str__(self):
-        return f"checked: {self.posting_id}"
+        return f"checked({self.source}): {self.posting_id}"
 
 
 class PipelineRun(models.Model):
