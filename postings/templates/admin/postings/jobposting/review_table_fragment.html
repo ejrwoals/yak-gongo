@@ -13,7 +13,7 @@
   </thead>
   <tbody>
     {% for row in rows %}
-    <tr data-pk="{{ row.pk }}" class="review-row{% if row.user_reviewed %} reviewed{% endif %}">
+    <tr data-pk="{{ row.pk }}" class="review-row{% if row.reviewed %} reviewed{% endif %}">
       <td><input type="checkbox" class="row-select" value="{{ row.pk }}"></td>
       {% for cell in row.cells %}
       <td>

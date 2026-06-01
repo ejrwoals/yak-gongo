@@ -48,7 +48,6 @@ class JobPosting(models.Model):
 
     # --- Quality / audit flags ---
     has_error = models.BooleanField(default=False)
-    user_reviewed = models.BooleanField(default=False, verbose_name='관리자 리뷰')
     user_comment = models.TextField(blank=True)
 
     class Meta:
@@ -57,7 +56,6 @@ class JobPosting(models.Model):
             models.Index(fields=['big_category']),
             models.Index(fields=['platform']),
             models.Index(fields=['has_error']),
-            models.Index(fields=['user_reviewed']),
         ]
 
     def save(self, *args, **kwargs):
@@ -74,11 +72,6 @@ class JobPosting(models.Model):
             if weekday_h is not None or weekend_h is not None:
                 self.hours_per_week = total
         super().save(*args, **kwargs)
-        # user_reviewed=True면 AdminCheck 레코드 자동 생성 (사람 검토 → source='admin' 으로 승격)
-        if self.user_reviewed:
-            AdminCheck.objects.update_or_create(
-                posting=self, defaults={'source': AdminCheck.SOURCE_ADMIN}
-            )
 
     def __str__(self):
         return f"[{self.platform}] {self.title[:40]}"

@@ -27,7 +27,18 @@ VERIFY_SYSTEM_PROMPT = """당신은 약국 약사 구인 공고 데이터의 검
 - 일회성 근무(is_one_time_work): 특정 날짜·단기(1일~2개월)·대타면 true. 매주 반복이면 false.
 - 일회성 시급(one_time_hourly_wage) 단위 '만원'. 일당/총액으로 적혔으면 근무시간으로 나눠 시급으로 환산.
 - 시각은 24시간제 실수. 오전 9시=9.0, 오후 6시 30분=18.5. 명시 없으면 null.
-- 평일 근무일(weekday_work_days)은 0~5. 주말 근무일(weekend_work_days)은 0/0.5/1/2 (격주 토요일=0.5).
+- 평일 근무일(weekday_work_days)은 0~5.
+- 주말 근무일(weekend_work_days): 토/일 근무를 일수로 환산해 합산한 값(0~2).
+  격주=0.5, 월1회≈0.25, 월2회≈0.5, 매주=1. '토 매주 + 일 월2회 = 1+0.5 = 1.5' 처럼 합산값도 정상이다.
+  0/0.5/1/2 만 허용되는 게 아니다. 1.5 같은 값을 그 자체로 틀렸다고 보지 마라.
+- 출퇴근 시각은 자유 값이 아니라 근무일 구성에 종속된 '근무일수 가중평균'이다.
+  각 요일의 가중치 = '그 요일 자체의 근무 빈도'(매주=1, 격주=0.5, 월2회=0.5, 월1회=0.25)이다.
+  총 일수(weekend_work_days)를 임의로 쪼갠 값이 아니라, 각 요일이 실제로 몇 번 나오는지로 정한다.
+  예1) 토 매주(가중치 1, 9시) + 일 매주(가중치 1, 9.5시) → 주말 출근 = (9×1 + 9.5×1)/(1+1) = 9.25.
+  예2) 토 매주(가중치 1, 9시) + 일 월2회(가중치 0.5, 10시) → 주말 출근 = (9×1 + 10×0.5)/1.5 = 9.333.
+  ★ 양일을 '매주' 근무로 택했으면 두 요일 가중치가 모두 1 이므로 단순평균이다. 한쪽을 0.5 로 쓰지 마라.
+  즉 weekend_work_days 를 바꾸면 weekend_start_time/weekend_end_time 도 그 구성에 맞게 다시 계산해야 한다.
+  평일 시각(weekday_*)도 평일 근무일 구성에 대한 가중평균이다. 시각과 근무일수는 한 묶음으로 본다.
 - 본문에 정보가 없는 항목은 null 이어야 한다. 지어내면 안 된다.
 
 [net_hourly_wage 판정 — 중요]
@@ -39,9 +50,31 @@ VERIFY_SYSTEM_PROMPT = """당신은 약국 약사 구인 공고 데이터의 검
 - 근무일·시각에서 0 과 null(없음)은 의미 차이가 없다. 0 을 null 로(또는 그 반대로) 바꾸라는 지적은 하지 마라.
 - 틀린 필드가 하나도 없으면 반드시 is_correct=true 로 답하라.
 
+[복수 해석이 가능할 때 — 시나리오 일관성만 검증]
+- 본문이 여러 해석을 허용하면, 반드시 '하나의 시나리오'를 골라 모든 필드를 그 시나리오로 일관되게 채워야 한다.
+  현재 저장값들이 그렇게 채워졌는지만 판정하라. 더 그럴듯한 해석을 새로 발명하는 게 임무가 아니다.
+
+- ★ 양자택일(OR)은 절대 평균 내지 마라.
+  '토일 양일 근무, 토요일만 근무 둘다 가능'처럼 둘 중 택일하는 옵션은 서로 배타적이다.
+  이걸 평균낸 값(예: 토만=1, 토일=2 → 1.5)은 어느 해석에도 없는 무효값이다. 한 옵션만 골라야 한다.
+  ↔ 반면 '토 매주 + 일 월2회'처럼 둘 다 실제로 발생하면 합산 1.5 는 정상이다(AND, 합산형).
+  즉 1.5 자체는 합산형이면 정상, 양자택일 평균이면 무효 — 본문이 'OR'인지 'AND'인지로 판단하라.
+
+- ★ 양자택일이 동등하게 명시돼 우열을 가릴 수 없으면, '더 많이 일하는' 최대(풀) 시나리오를 채택하라.
+  (예: 토 9시·일 9.5시, '토만 vs 토일 양일' → 토일 양일 채택: weekend_work_days=2,
+   두 요일 모두 매주이므로 주말 출근 = (9+9.5)/2 = 9.25. 일요일을 0.5 로 깎지 마라.)
+
+- 판정 기준:
+  · 현재값들이 '한 시나리오'로 근무일수·출근·퇴근이 모두 모순 없이 설명되면 is_correct=true.
+  · 양자택일을 평균냈거나(예: 1.5), 근무일수는 해석A·시각은 해석B인 '혼합'이면 is_correct=false.
+    (예: weekend_work_days=1.5 인데 weekend_start_time=9 → 일요일이 빠진 토요일 단독 시각이라 모순.)
+- 혼합/평균으로 판정하면, 위 컨벤션(최대 시나리오)으로 통일한 값을 suggested 로 제시하라.
+  근무일 구성을 정하면 그 구성으로 가중평균한 시각을 함께 제시한다.
+
 [출력 형식] 반드시 아래 JSON 객체 '하나만' 출력. JSON 외의 다른 텍스트는 금지.
-- 모든 값이 본문과 일치하면:
-{"is_correct": true, "wrong_fields": [], "explanation": ""}
+- 모든 값이 본문과 일치하면 (explanation 에 '왜 맞다고 판단했는지' 근거를 한두 문장으로 적는다.
+  핵심 값이 본문의 어느 서술과 어떻게 맞는지 구체적으로. 빈 문자열 금지):
+{"is_correct": true, "wrong_fields": [], "explanation": "<합격 근거 요약>"}
 - 틀린 값이 있으면 (틀린 항목마다 현재값/제안값/사유 포함):
 {"is_correct": false,
  "wrong_fields": [
@@ -180,6 +213,15 @@ def _format_log(verdict):
     return '\n'.join(lines)
 
 
+def _format_pass_comment(verdict, is_truly_correct):
+    """합격 판정 사유를 user_comment 용 문자열로 조립."""
+    if is_truly_correct:
+        expl = (verdict.get('explanation') or '').strip()
+        return '[LLM 합격] ' + (expl or '추출값이 본문과 일치함.')
+    # is_correct=false 였지만 지적 항목이 모두 오탐(현재값과 동일)으로 걸러진 경우
+    return '[LLM 합격] 자동 점검에서 지적된 항목이 모두 현재값과 동일(오탐)로 확인됨.'
+
+
 def apply_verdict(posting, verdict):
     """판정을 DB에 적용. 'ok' | 'error' | 'failed' 반환."""
     if not isinstance(verdict, dict) or 'is_correct' not in verdict:
@@ -190,6 +232,12 @@ def apply_verdict(posting, verdict):
     real_wrong = _clean_wrong_fields(verdict)
 
     if verdict.get('is_correct') is True or not real_wrong:
+        # 합격 사유를 코멘트에 기록 (사람이 남긴 기존 코멘트는 덮어쓰지 않는다).
+        if not (posting.user_comment or '').strip():
+            posting.user_comment = _format_pass_comment(
+                verdict, is_truly_correct=verdict.get('is_correct') is True
+            )
+            posting.save()
         AdminCheck.objects.get_or_create(
             posting=posting, defaults={'source': AdminCheck.SOURCE_LLM}
         )

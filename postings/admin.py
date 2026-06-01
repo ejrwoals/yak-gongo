@@ -33,21 +33,26 @@ class JobPostingAdmin(admin.ModelAdmin):
 
     list_display = (
         'title_short', 'created_at', 'platform', 'city',
-        'hourly_wage_display', 'net_salary_display', 'is_one_time_work_display', 'user_reviewed', 'has_error',
+        'hourly_wage_display', 'net_salary_display', 'is_one_time_work_display', 'admin_check_display', 'has_error',
         'link_display',
     )
     list_display_links = ('title_short',)
     list_filter = (
         ('created_at', DateRangeFilterBuilder(title='공고 날짜')),
         'is_salary_disclosed', 'is_one_time_work', 'platform', 'big_category',
-        'has_error', 'user_reviewed',
+        'has_error',
         ('net_hourly_wage', NumericRangeFilterBuilder(title='시급(세후)')),
     )
     search_fields = ('title', 'pharmacy_name', 'city', 'url')
     ordering = ('-created_at',)
     list_per_page = 50
 
-    list_editable = ('user_reviewed',)
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('admin_check')
+
+    @admin.display(description='검토', boolean=True)
+    def admin_check_display(self, obj):
+        return hasattr(obj, 'admin_check')
 
     readonly_fields = ('url', 'inserted_at', 'gpt_output_log', 'gpt_error_log', 'body')
 
@@ -73,7 +78,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
         ('검토 / 품질', {
-            'fields': ('has_error', 'user_reviewed', 'user_comment'),
+            'fields': ('has_error', 'user_comment'),
         }),
         ('원문', {
             'fields': ('body',),
@@ -229,7 +234,7 @@ class JobPostingAdmin(admin.ModelAdmin):
                 'cells': cells,
                 'expandable_readonly': expandable_readonly,
                 'expandable_edit': expandable_edit,
-                'user_reviewed': posting.user_reviewed,
+                'reviewed': posting.is_reviewed,
                 'url': posting.url,
             })
 
@@ -281,7 +286,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             converted = self._convert_value(value, meta['type'])
             setattr(posting, field_name, converted)
 
-        posting.save()  # save()가 user_reviewed=True면 AdminCheck 자동 생성
+        posting.save()  # 검토 완료 표시는 mark-reviewed(AdminCheck) 경로에서 별도 처리
         return JsonResponse({'ok': True})
 
     def review_mark_view(self, request):

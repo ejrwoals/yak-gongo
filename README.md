@@ -44,8 +44,7 @@ yak-gongo/
 │   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
 │   │   ├── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
 │   │   ├── auto_verify_step3.py # 3단계 이상치 공고 LLM 일괄 자동 검토 (CLI)
-│   │   ├── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
-│   │   └── backfill_legacy_admincheck.py # 레거시 검토 공고에 AdminCheck 백필 (1회성)
+│   │   └── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
 │   └── templates/admin/postings/pipelinerun/
 │       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
 │       ├── run_pipeline.html# 실행 옵션 폼 페이지
@@ -295,9 +294,9 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 - **목록 컬럼**: 공고 제목, 등록일, 플랫폼, 지역, 시급(세후), 월급(세후), 일회성 여부, 검토 여부, 에러 여부, 원문 링크
   - 시급(세후) 컬럼은 일회성 근무이면 `one_time_hourly_wage`, 지속성이면 `net_hourly_wage`를 자동 표시
-- **필터** (우측 사이드바): 등록일 범위, 급여 명시 여부, 일회성/지속성, 플랫폼, 지역 대분류, 에러 여부, 검토 여부, 에러 교정 여부, 시급(세후) 범위
+  - 검토 여부(`검토`) 컬럼은 해당 공고에 `AdminCheck` 레코드가 존재하는지(`hasattr(obj, 'admin_check')`)를 표시하는 읽기 전용 boolean이다
+- **필터** (우측 사이드바): 등록일 범위, 급여 명시 여부, 일회성/지속성, 플랫폼, 지역 대분류, 에러 여부, 시급(세후) 범위
 - **검색**: 공고 제목, 약국 이름, 지역, URL
-- **`관리자 리뷰` 체크박스**: 목록에서 바로 체크·저장 가능 (별도 페이지 이동 불필요)
 - **에러 공고 필터링**: `has_error = True`로 필터 → LLM이 의심스럽다고 판단한 공고만 모아서 검토
 
 ### 공고 상세 화면
@@ -311,7 +310,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 | 근무 일정 | 평일/주말 근무 일수, 출퇴근 시각, 주당·월별 근무 시간 |
 | 복리후생 | 월차, 경력 요구, 식사 관련 |
 | LLM 결과 | 모델명, 요약문, 상세 로그 (접기/펼치기) |
-| 검토 / 품질 | 에러 여부, 에러 교정 완료, 검토 완료, 개인 코멘트 |
+| 검토 / 품질 | 에러 여부, 개인 코멘트 (검토 완료 여부는 별도 필드가 아니라 `AdminCheck` 존재로 판정) |
 | 원문 | 공고 본문 전체 (접기/펼치기) |
 
 ### 리뷰 대시보드 (프리셋 기반)
@@ -327,7 +326,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 | 3단계: 비에러 이상치 | 지속성 시급 검토 | 지속성 근무이면서 시급/월급 null 또는 시급 < 2.0 / > 4.0 |
 | 3단계: 비에러 이상치 | 세전 확인 | 지속성 근무이면서 본문에 "세전" 포함 |
 | 3단계: 비에러 이상치 | 지역 미분류 | `city`가 빈 문자열 |
-| 최종 점검 | 리뷰완료/코멘트 누락 | 리뷰 완료인데 코멘트 누락, 또는 미리뷰인데 코멘트 있음 |
+| 최종 점검 | 검토완료/코멘트 누락 | 검토 완료(`AdminCheck` 존재)인데 코멘트 누락, 또는 미검토인데 코멘트 있음 |
 
 3단계 탭들은 `has_error=False` & `AdminCheck` 미존재인 공고만 대상으로 한다.
 
@@ -337,7 +336,9 @@ http://localhost:8000/admin/ 접속 후 사용.
 1. `has_error=True` 필터로 에러 공고 목록 확인
 2. 공고 클릭 → LLM 요약문과 원문 비교
 3. 시급이 잘못 계산된 경우 직접 수정
-4. `error_corrected` 체크 → `user_reviewed` 체크 → 저장
+4. 행을 선택해 **검토 완료** (벌크) 처리 → `AdminCheck(source='admin')` 생성으로 검토 완료 기록
+
+검토 완료 여부는 별도 boolean 필드가 아니라 모든 프리셋에 공통 주석(`is_reviewed` = `AdminCheck` 존재 여부, source 무관)으로 노출되며, 검토 완료된 행은 `reviewed` 클래스로 강조된다.
 
 정렬은 모든 프리셋에서 프리셋 컬럼 외에 등록 시각(`inserted_at`)·수정 시각(`updated_at`)으로도 가능하다.
 
@@ -350,7 +351,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 1. 버튼을 누르면 현재 프리셋의 후보 공고를 모아 실시간 진행 모달이 뜬다. 처리 건수 한도를 지정하거나, 표에서 체크한 행만 검토할 수 있다.
 2. 공고당 Gemini 1회 호출로, **새로 추출하지 않고** 이미 DB에 저장된 값이 본문과 일치하는지만 판정한다. 기존 추출 파이프라인(prompts/tasks)을 재실행하지 않고 도메인 규칙만 압축한 단일 검산 프롬프트(`review_verify.VERIFY_SYSTEM_PROMPT`)를 사용한다. 프리셋별 `verify_focus` 힌트로 검토 중점을 안내한다.
 3. 판정 결과에 따라:
-   - **일치** → `AdminCheck(source='llm')` 생성 → 검토 완료로 처리되어 3단계 집합에서 빠진다.
+   - **일치** → `AdminCheck(source='llm')` 생성 → 검토 완료로 처리되어 3단계 집합에서 빠진다. 합격 사유(`explanation`)를 `[LLM 합격] ...` 형태로 `user_comment`에 기록하되, 사람이 남긴 기존 코멘트는 덮어쓰지 않는다 (불일치 시 사유를 `gpt_error_log`에 남기는 것과 대칭).
    - **불일치** → 틀린 필드/제안값/사유를 `gpt_error_log`에 기록 → `save()`가 `has_error=True`로 설정 → **2단계(에러 검토)로 이동**하여 사람이 직접 수정한다.
    - **실패**(JSON 파싱 실패, MAX_TOKENS, 빈 응답 등) → 변경 없이 사유만 모달 로그에 표시.
 4. 이미 처리된 공고(`has_error=True` 또는 `AdminCheck` 존재)는 건너뛴다. 모달은 항목별 로그(제목 + 사유)와 함께 중지/닫기를 지원한다.
@@ -364,7 +365,7 @@ http://localhost:8000/admin/ 접속 후 사용.
 | `review/verify-candidates/` | AJAX GET: 현재 프리셋의 LLM 검토 대상 공고 id·제목 목록 |
 | `review/auto-verify/` | AJAX POST: 주어진 공고 id 배치를 Gemini로 검산하고 결과 반환 |
 
-> 사람이 직접 `user_reviewed`를 체크하거나 일괄 검토하면, 기존 `AdminCheck(source='llm')`은 `source='admin'`으로 승격된다 (검토 주체 추적).
+> 사람이 대시보드에서 **검토 완료**(`mark-reviewed/`)를 실행하면, 기존 `AdminCheck(source='llm')`은 `source='admin'`으로 승격된다 (검토 주체 추적).
 
 ### 시급 올림 보정 일괄 적용
 
@@ -583,13 +584,13 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `gpt_output_log` | TextField | 각 task 원본 출력 로그 |
 | `gpt_error_log` | TextField | 에러 발생 시 상세 메시지 |
 | `has_error` | BooleanField | 에러 발생 여부 — `gpt_error_log`가 비어 있지 않으면 `save()` 시 자동으로 `True` 설정 |
-| `error_corrected` | BooleanField | 수동 교정 완료 여부 |
-| `user_reviewed` | BooleanField | 개인 검토 완료 여부 |
-| `user_comment` | TextField | 개인 메모 |
+| `user_comment` | TextField | 개인 메모. LLM 자동 검토 합격 시 `[LLM 합격] ...` 사유가 기록될 수 있음 (기존 사람 코멘트는 보존) |
+
+> 검토 완료 여부는 더 이상 `JobPosting`의 boolean 필드가 아니다. 별도의 `AdminCheck` 레코드 존재 여부가 단일 판정 기준이며, 쿼리에서는 `is_reviewed`(= `Exists(AdminCheck)`, source 무관) 주석으로 사용한다.
 
 ### AdminCheck
 
-관리자 검토 완료 기록. **레코드 존재 = 검토 완료**, 레코드 없음 = 미검토. 리뷰 대시보드에서 인라인 저장·일괄 체크 시, 또는 LLM 자동 검토에서 값이 본문과 일치할 때 자동 생성된다.
+관리자 검토 완료 기록이자 **"검토 완료"의 단일 진실 공급원(single source of truth)**. **레코드 존재 = 검토 완료**, 레코드 없음 = 미검토. 리뷰 대시보드에서 **검토 완료**(`mark-reviewed/`)를 실행하면, 또는 LLM 자동 검토에서 값이 본문과 일치할 때 자동 생성된다.
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
@@ -597,7 +598,7 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `checked_at` | DateTimeField | 검토 완료 시각 (자동 기록) |
 | `source` | CharField (choices) | 검토 주체 — `admin`(관리자 직접 검토) / `llm`(LLM 자동 검토). 기본값 `admin` |
 
-사람이 직접 검토(`user_reviewed` 체크 또는 일괄 검토)하면 기존 `source='llm'` 레코드는 `source='admin'`으로 승격된다.
+사람이 대시보드에서 **검토 완료**를 실행하면 기존 `source='llm'` 레코드는 `source='admin'`으로 승격된다.
 
 ### PipelineRun
 
@@ -637,18 +638,6 @@ python legacy-files/one-time-data-migration/migrate_json_to_sqlite.py output_err
 - `"TRUE"` / `"FALSE"` 문자열 → Python bool 자동 변환
 - NaN → None 자동 변환
 
-### 레거시 AdminCheck 백필
+### 레거시 AdminCheck 백필 (완료된 1회성 작업)
 
-위 JSON 임포트로 들어온 공고들은 `user_reviewed=True`이지만 그에 대응하는 `AdminCheck` 레코드가 없다. `AdminCheck`는 **레코드 존재 = 검토 완료**를 의미하므로, `backfill_legacy_admincheck` 커맨드로 이 공고들에 AdminCheck를 일괄 생성하여 검토 상태를 일치시킨다.
-
-```bash
-# 대상 건수만 확인 (실제 생성 없음)
-python manage.py backfill_legacy_admincheck --dry-run
-
-# 실제 백필 실행
-python manage.py backfill_legacy_admincheck
-```
-
-- 대상: `user_reviewed=True` 이면서 `AdminCheck`가 없는 공고
-- 생성된 `AdminCheck`의 `checked_at`은 레거시 표식으로 `2000-01-01`(KST)로 설정하여 일반 검토 기록과 구분한다
-- `auto_now_add`가 적용된 `checked_at`을 우회하기 위해, `bulk_create`로 레코드를 만든 뒤 `.update()`로 레거시 시각을 덮어쓴다
+과거 JSON 임포트로 들어온 검토 완료 공고들은 (이제는 제거된) 구 `user_reviewed=True` 플래그만 있고 그에 대응하는 `AdminCheck` 레코드가 없었다. `AdminCheck` 존재 여부를 검토 완료의 단일 기준으로 전환하면서, 이 공고들에 `AdminCheck`를 일괄 생성하는 1회성 백필을 수행한 뒤 `user_reviewed` 필드를 폐기(migration 0008)했다. 백필 레코드의 `checked_at`은 레거시 표식으로 `2000-01-01`(KST)로 설정해 일반 검토 기록과 구분했다. 이미 완료된 작업으로, 관련 1회성 커맨드는 코드베이스에서 제거되었다.

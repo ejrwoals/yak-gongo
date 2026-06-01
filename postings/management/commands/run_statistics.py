@@ -4,16 +4,19 @@ import os
 import pandas as pd
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db.models import Exists, OuterRef
 
-from postings.models import JobPosting
+from postings.models import AdminCheck, JobPosting
 
 
 def build_dataframe() -> pd.DataFrame:
     """Django DB에서 JobPosting 데이터를 읽어 통계 스크립트 호환 형식의 DataFrame으로 변환."""
-    qs = JobPosting.objects.values(
+    qs = JobPosting.objects.annotate(is_reviewed=Exists(
+        AdminCheck.objects.filter(posting=OuterRef('pk'))
+    )).values(
         'title', 'created_at', 'platform', 'url', 'pharmacy_name',
         'big_category', 'city', 'experience_required', 'monthly_leave',
-        'is_salary_disclosed', 'user_reviewed', 'llm_model',
+        'is_salary_disclosed', 'is_reviewed', 'llm_model',
         'is_one_time_work', 'one_time_hourly_wage', 'net_hourly_wage', 'net_salary',
         'hours_per_week', 'weekday_work_days',
         'weekday_start_time', 'weekday_end_time', 'weekend_work_days',
@@ -53,10 +56,10 @@ def build_dataframe() -> pd.DataFrame:
     for src_col, dst_col in [
         ('is_salary_disclosed', '공고에 급여 명시 여부'),
         ('is_one_time_work',    '일회성 근무 여부'),
-        ('user_reviewed',       '내가 검토시 체크'),
+        ('is_reviewed',         '내가 검토시 체크'),
     ]:
         df[dst_col] = df[src_col].map({True: 'Yes', False: 'No', None: None})
-    df = df.drop(columns=['is_salary_disclosed', 'is_one_time_work', 'user_reviewed'])
+    df = df.drop(columns=['is_salary_disclosed', 'is_one_time_work', 'is_reviewed'])
 
     # 파생 컬럼
     df['주당 근무 일수'] = df['평일 근무 일수'].fillna(0) + df['주말 근무 일수'].fillna(0)

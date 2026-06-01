@@ -442,7 +442,7 @@
     }
   }
 
-  // 벌크 리뷰 완료
+  // 벌크 검토 완료 (AdminCheck 생성)
   document.getElementById('bulk-mark-reviewed').addEventListener('click', function() {
     const pks = Array.from(document.querySelectorAll('.row-select:checked')).map(cb => parseInt(cb.value));
     if (pks.length === 0) return;
@@ -649,9 +649,6 @@
           if (row) {
             row.classList.add('save-success');
             setTimeout(() => row.classList.remove('save-success'), 700);
-            if (fields.user_reviewed === true) {
-              row.classList.add('reviewed');
-            }
             // dirty 초기화
             row.querySelectorAll('.edit-field').forEach(el => {
               el.dataset.original = el.type === 'checkbox' ? String(el.checked) : el.value;
@@ -667,7 +664,7 @@
       .catch(() => alert('저장 요청 실패'));
   }
 
-  // 리뷰 완료
+  // 검토 완료 (AdminCheck 생성)
   function markReviewed(pks) {
     fetch('mark-reviewed/', {
       method: 'POST',

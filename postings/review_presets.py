@@ -5,8 +5,10 @@
 """
 from collections import OrderedDict
 
-from django.db.models import F, Q, Value
+from django.db.models import Exists, F, OuterRef, Q, Value
 from django.db.models.functions import Coalesce, Floor
+
+from .models import AdminCheck
 
 # ── 필드 메타데이터 ──────────────────────────────────────────
 # type: 'bool' → checkbox, 'float' → number input, 'char' → text input,
@@ -38,7 +40,7 @@ FIELD_META = {
     'city':               {'label': '지역',       'type': 'char'},
     'big_category':       {'label': '대분류',     'type': 'char'},
     'has_error':          {'label': '에러',       'type': 'bool'},
-    'user_reviewed':      {'label': '리뷰',       'type': 'bool'},
+    'is_reviewed':        {'label': '검토',       'type': 'bool'},  # AdminCheck(admin) 존재 여부 (읽기전용 주석)
     'user_comment':       {'label': '코멘트',     'type': 'text'},
     'gpt_error_log':      {'label': '에러 로그',  'type': 'text'},
     'gpt_summary':        {'label': 'GPT 요약',   'type': 'text'},
@@ -65,7 +67,6 @@ _COMMON_EXPAND_EDITABLE = [
     'wage_type', 'wage_raw',
     'is_one_time_work', 'one_time_hourly_wage',
     'city', 'big_category',
-    'user_reviewed',
     'user_comment',
 ]
 
@@ -83,8 +84,8 @@ REVIEW_PRESETS = OrderedDict([
         'description': 'is_salary_disclosed = False 인 공고. 이론상 파이프라인에서 걸러져야 하지만 혹시 누락된 건이 있는지 확인.',
         'group': '1단계: 사전 점검',
         'columns': ['title', 'pharmacy_name', 'platform', 'created_at', 'inserted_at',
-                     'is_salary_disclosed', 'user_reviewed'],
-        'editable': ['is_salary_disclosed', 'user_reviewed'],
+                     'is_salary_disclosed', 'is_reviewed'],
+        'editable': ['is_salary_disclosed'],
         'expandable': [],
         'default_sort': 'updated_at',
         'default_sort_dir': 'desc',
@@ -98,7 +99,7 @@ REVIEW_PRESETS = OrderedDict([
         'columns': ['title', 'platform', 'created_at', 'net_hourly_wage', 'net_salary',
                      'weekday_work_days', 'weekend_work_days',
                      'is_one_time_work', 'one_time_hourly_wage',
-                     'user_reviewed'],
+                     'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['gpt_error_log', 'gpt_summary', 'body'],
         'default_sort': 'updated_at',
@@ -112,7 +113,7 @@ REVIEW_PRESETS = OrderedDict([
         'group': '3단계: 비에러 이상치',
         'verify_focus': '특히 평일/주말 근무 일수가 본문과 정확히 일치하는지 집중 검토하세요. 출퇴근 시각도 함께 확인.',
         'columns': ['title', 'pharmacy_name', 'weekday_work_days', 'weekend_work_days',
-                     'total_work_days', 'hours_per_week', 'user_reviewed'],
+                     'total_work_days', 'hours_per_week', 'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body', 'gpt_summary'],
         'default_sort': 'total_work_days',
@@ -125,7 +126,7 @@ REVIEW_PRESETS = OrderedDict([
         'group': '3단계: 비에러 이상치',
         'verify_focus': '특히 일회성 시급(만원, 일당/총액이면 근무시간으로 나눠 환산)이 본문과 일치하는지, 일회성 근무 여부 판단이 맞는지 집중 검토하세요.',
         'columns': ['title', 'pharmacy_name', 'one_time_hourly_wage', 'is_one_time_work',
-                     'user_reviewed'],
+                     'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body', 'gpt_summary'],
         'default_sort': 'one_time_hourly_wage',
@@ -140,7 +141,7 @@ REVIEW_PRESETS = OrderedDict([
         'group': '3단계: 비에러 이상치',
         'verify_focus': '특히 급여 금액·급여 유형(시급/월급/연봉)·세전세후 구분이 본문과 정확히 일치하는지 집중 검토하세요.',
         'columns': ['title', 'pharmacy_name', 'net_hourly_wage', 'net_salary',
-                     'wage_raw', 'wage_type', 'user_reviewed'],
+                     'wage_raw', 'wage_type', 'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body', 'gpt_summary'],
         'default_sort': 'inserted_at',
@@ -152,7 +153,7 @@ REVIEW_PRESETS = OrderedDict([
         'group': '3단계: 비에러 이상치',
         'verify_focus': '특히 본문이 "세전" 금액을 명시했는데 세후로 잘못 처리되지 않았는지(net_salary가 원본 급여보다 적절히 작은지) 집중 검토하세요.',
         'columns': ['title', 'pharmacy_name', 'net_hourly_wage', 'net_salary',
-                     'wage_raw', 'user_reviewed'],
+                     'wage_raw', 'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body', 'gpt_summary'],
         'default_sort': 'inserted_at',
@@ -165,7 +166,7 @@ REVIEW_PRESETS = OrderedDict([
         'description': 'city가 빈 문자열인 공고. geo/mapping.py의 conversion_dict에 없는 주소일 가능성. 직접 입력 필요.',
         'group': '3단계: 비에러 이상치',
         'columns': ['title', 'pharmacy_name', 'city', 'big_category', 'platform',
-                     'user_reviewed'],
+                     'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body'],
         'default_sort': 'updated_at',
@@ -174,11 +175,11 @@ REVIEW_PRESETS = OrderedDict([
 
     # ── 최종 점검 ──
     ('final_check', {
-        'label': '리뷰완료/코멘트 누락',
-        'description': '리뷰 완료인데 코멘트 누락, 또는 미리뷰인데 코멘트가 있는 공고.',
+        'label': '검토완료/코멘트 누락',
+        'description': '검토 완료(AdminCheck)인데 코멘트 누락, 또는 미검토인데 코멘트가 있는 공고.',
         'group': '최종 점검',
         'columns': ['title', 'pharmacy_name', 'has_error',
-                     'user_reviewed', 'user_comment'],
+                     'is_reviewed', 'user_comment'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body', 'gpt_summary'],
         'default_sort': 'updated_at',
@@ -189,7 +190,11 @@ REVIEW_PRESETS = OrderedDict([
 def get_preset_queryset(preset_key, base_qs):
     """프리셋 키에 해당하는 필터와 어노테이션을 적용한 queryset을 반환한다."""
     p = REVIEW_PRESETS[preset_key]
-    qs = base_qs
+    # 모든 프리셋에 '검토 완료' 여부(AdminCheck 존재, source 무관)를 주석으로 노출한다.
+    # 컬럼 표시(is_reviewed)·final_check 필터에서 공통으로 사용. 사람/LLM 자동 검토 모두 '검토 완료'로 본다.
+    qs = base_qs.annotate(is_reviewed=Exists(
+        AdminCheck.objects.filter(posting=OuterRef('pk'))
+    ))
 
     if preset_key == 'salary_undisclosed':
         qs = qs.filter(is_salary_disclosed=False, admin_check__isnull=True)
@@ -232,9 +237,10 @@ def get_preset_queryset(preset_key, base_qs):
         qs = qs.filter(**_STEP3_BASE, city='')
 
     elif preset_key == 'final_check':
+        # 사람 검토 완료(is_reviewed)와 코멘트 유무가 어긋난 공고.
         qs = qs.filter(
-            Q(user_reviewed=True, user_comment='') |
-            Q(user_reviewed=False) & ~Q(user_comment='')
+            Q(is_reviewed=True, user_comment='') |
+            Q(is_reviewed=False) & ~Q(user_comment='')
         )
 
     return qs
