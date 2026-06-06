@@ -45,8 +45,6 @@ def process_posting(
         'is_salary_disclosed': None,
         'is_one_time_work': None,
         'one_time_hourly_wage': None,
-        'wage_type': '',
-        'wage_raw': None,
         'net_hourly_wage': None,
         'net_salary': None,
         # schedule
@@ -82,8 +80,7 @@ def process_posting(
 
     result['is_salary_disclosed'] = bool(is_salary)
     result['is_one_time_work'] = bool(is_one_time)
-    result['wage_type'] = str(wage_type) if wage_type else ''
-    result['wage_raw'] = wage
+    # wage_type / wage(원본 급여)는 아래 세후 환산 계산에만 쓰는 중간값이며 DB에는 저장하지 않는다.
     result['gpt_output_log'] += f'[T1] {t1}\n'
 
     if is_salary:

@@ -34,16 +34,17 @@ yak-gongo/
 │   └── urls.py
 │
 ├── postings/                # 핵심 앱: 공고 DB + Admin
-│   ├── models.py            # JobPosting, AdminCheck, PipelineRun
+│   ├── models.py            # JobPosting, AdminCheck, AgentReviewSession, PipelineRun
 │   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI
 │   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼, LLM 검토 대상/포커스)
-│   ├── review_verify.py     # 3단계 이상치 공고 LLM(Gemini) 재검산 서비스
+│   ├── review_verify.py     # 2단계 outlier 공고 LLM(Gemini) 재검산 서비스 (DOMAIN_RULES 공유 상수)
+│   ├── review_agent.py      # 3단계 에러 케이스 대화형 agent 검토 서비스 (Gemini multi-turn + function calling)
 │   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
 │   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
 │   │   ├── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
-│   │   ├── auto_verify_step3.py # 3단계 이상치 공고 LLM 일괄 자동 검토 (CLI)
+│   │   ├── auto_verify_step3.py # 2단계 outlier 공고 LLM 일괄 자동 검토 (CLI)
 │   │   └── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
 │   └── templates/admin/postings/pipelinerun/
 │       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
@@ -320,15 +321,15 @@ http://localhost:8000/admin/ 접속 후 사용.
 | 단계 | 탭 이름 | 필터 조건 |
 |---|---|---|
 | 1단계: 사전 점검 | 급여 미공개 | `is_salary_disclosed=False` & `AdminCheck` 미존재 |
-| 2단계: 에러 검토 | 에러 미검토 | `has_error=True` & `AdminCheck` 미존재 |
-| 3단계: 비에러 이상치 | 근무일 이상치 | 평일 근무일 < 0 또는 > 5 또는 비정수(소수점), 주말 근무일이 0.5/1/2 외 |
-| 3단계: 비에러 이상치 | 일회성 시급 검토 | 일회성 근무이면서 시급 null / < 2.5 / > 4.0 |
-| 3단계: 비에러 이상치 | 지속성 시급 검토 | 지속성 근무이면서 시급/월급 null 또는 시급 < 2.0 / > 4.0 |
-| 3단계: 비에러 이상치 | 세전 확인 | 지속성 근무이면서 본문에 "세전" 포함 |
-| 3단계: 비에러 이상치 | 지역 미분류 | `city`가 빈 문자열 |
+| 2단계: outlier 검토 | 근무일 이상치 | 평일 근무일 < 0 또는 > 5 또는 비정수(소수점), 주말 근무일이 0.5/1/2 외 |
+| 2단계: outlier 검토 | 일회성 시급 검토 | 일회성 근무이면서 시급 null / < 2.5 / > 4.0 |
+| 2단계: outlier 검토 | 지속성 시급 검토 | 지속성 근무이면서 시급/월급 null 또는 시급 < 2.0 / > 4.0 |
+| 2단계: outlier 검토 | 세전 확인 | 지속성 근무이면서 본문에 "세전" 포함 |
+| 2단계: outlier 검토 | 지역 미분류 | `city`가 빈 문자열 |
+| 3단계: 에러 케이스 재검토 | 에러 미검토 | `has_error=True` & `AdminCheck` 미존재 |
 | 최종 점검 | 검토완료/코멘트 누락 | 검토 완료(`AdminCheck` 존재)인데 코멘트 누락, 또는 미검토인데 코멘트 있음 |
 
-3단계 탭들은 `has_error=False` & `AdminCheck` 미존재인 공고만 대상으로 한다.
+2단계(outlier 검토) 탭들은 `has_error=False` & `AdminCheck` 미존재인 공고만 대상으로 한다. 자동 검산(2단계)에서 본문과 불일치가 발견된 공고는 `has_error=True`가 되어 3단계(에러 케이스 재검토)로 넘어간다.
 
 프리셋 정의는 `postings/review_presets.py`의 `REVIEW_PRESETS`에서 관리한다.
 
@@ -342,17 +343,17 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 정렬은 모든 프리셋에서 프리셋 컬럼 외에 등록 시각(`inserted_at`)·수정 시각(`updated_at`)으로도 가능하다.
 
-### LLM 자동 검토 (3단계 이상치 프리셋)
+### LLM 자동 검토 (2단계 outlier 프리셋)
 
-3단계: 비에러 이상치 프리셋 중 LLM 추출값을 재검산할 수 있는 4개 탭(`근무일 이상치`, `일회성 시급 검토`, `지속성 시급 검토`, `세전 확인`)에는 **🤖 LLM으로 자동 검토** 버튼이 노출된다 (`지역 미분류`는 `city`가 LLM 추출이 아니라 `geo/mapping` 변환 결과라 제외). LLM 검토 대상 프리셋 목록은 `review_presets.py`의 `VERIFY_PRESET_KEYS`로 관리한다.
+2단계: outlier 검토 프리셋 중 LLM 추출값을 재검산할 수 있는 4개 탭(`근무일 이상치`, `일회성 시급 검토`, `지속성 시급 검토`, `세전 확인`)에는 **🤖 LLM으로 자동 검토** 버튼이 노출된다 (`지역 미분류`는 `city`가 LLM 추출이 아니라 `geo/mapping` 변환 결과라 제외). LLM 검토 대상 프리셋 목록은 `review_presets.py`의 `VERIFY_PRESET_KEYS`로 관리한다.
 
 동작 방식:
 
 1. 버튼을 누르면 현재 프리셋의 후보 공고를 모아 실시간 진행 모달이 뜬다. 처리 건수 한도를 지정하거나, 표에서 체크한 행만 검토할 수 있다.
-2. 공고당 Gemini 1회 호출로, **새로 추출하지 않고** 이미 DB에 저장된 값이 본문과 일치하는지만 판정한다. 기존 추출 파이프라인(prompts/tasks)을 재실행하지 않고 도메인 규칙만 압축한 단일 검산 프롬프트(`review_verify.VERIFY_SYSTEM_PROMPT`)를 사용한다. 프리셋별 `verify_focus` 힌트로 검토 중점을 안내한다.
+2. 공고당 Gemini 1회 호출로, **새로 추출하지 않고** 이미 DB에 저장된 값이 본문과 일치하는지만 판정한다. 기존 추출 파이프라인(prompts/tasks)을 재실행하지 않고 도메인 규칙(`review_verify.DOMAIN_RULES`)만 압축한 단일 검산 프롬프트(`review_verify.VERIFY_SYSTEM_PROMPT`)를 사용한다. 프리셋별 `verify_focus` 힌트로 검토 중점을 안내한다.
 3. 판정 결과에 따라:
-   - **일치** → `AdminCheck(source='llm')` 생성 → 검토 완료로 처리되어 3단계 집합에서 빠진다. 합격 사유(`explanation`)를 `[LLM 합격] ...` 형태로 `user_comment`에 기록하되, 사람이 남긴 기존 코멘트는 덮어쓰지 않는다 (불일치 시 사유를 `gpt_error_log`에 남기는 것과 대칭).
-   - **불일치** → 틀린 필드/제안값/사유를 `gpt_error_log`에 기록 → `save()`가 `has_error=True`로 설정 → **2단계(에러 검토)로 이동**하여 사람이 직접 수정한다.
+   - **일치** → `AdminCheck(source='llm')` 생성 → 검토 완료로 처리되어 2단계 outlier 집합에서 빠진다. 합격 사유(`explanation`)를 `[LLM 합격] ...` 형태로 `user_comment`에 기록하되, 사람이 남긴 기존 코멘트는 덮어쓰지 않는다 (불일치 시 사유를 `gpt_error_log`에 남기는 것과 대칭).
+   - **불일치** → 틀린 필드/제안값/사유를 `gpt_error_log`에 기록 → `save()`가 `has_error=True`로 설정 → **3단계(에러 케이스 재검토)로 이동**하여 사람이 직접(또는 대화형 agent로) 수정한다.
    - **실패**(JSON 파싱 실패, MAX_TOKENS, 빈 응답 등) → 변경 없이 사유만 모달 로그에 표시.
 4. 이미 처리된 공고(`has_error=True` 또는 `AdminCheck` 존재)는 건너뛴다. 모달은 항목별 로그(제목 + 사유)와 함께 중지/닫기를 지원한다.
 
@@ -366,6 +367,30 @@ http://localhost:8000/admin/ 접속 후 사용.
 | `review/auto-verify/` | AJAX POST: 주어진 공고 id 배치를 Gemini로 검산하고 결과 반환 |
 
 > 사람이 대시보드에서 **검토 완료**(`mark-reviewed/`)를 실행하면, 기존 `AdminCheck(source='llm')`은 `source='admin'`으로 승격된다 (검토 주체 추적).
+
+### AI agent 대화형 검토 (3단계 에러 케이스 재검토)
+
+3단계: 에러 케이스 재검토(`에러 미검토`) 탭에서 행을 하나 선택하면 **💬 AI agent 대화형 검토** 버튼이 활성화된다. 자동 검산에서 본문과 불일치가 잡혀 `has_error=True`가 된 공고를, 사람이 일일이 필드를 고치는 대신 Gemini agent와 대화하며 바로잡는 방식이다.
+
+동작 방식:
+
+1. 버튼을 누르면 채팅 모달이 열린다. 좌측에는 케이스 컨텍스트(현재 DB 필드 스냅샷 + 공고 본문 + 에러 로그)가, 우측에는 대화창이 표시된다. agent는 첫 턴에 에러 로그·현재 DB값·본문을 근거로 **무엇이 왜 틀렸는지 브리핑**하고 수정안을 제시한다.
+2. agent는 같은 도메인 지식(`review_verify.DOMAIN_RULES`)을 공유하므로 자동 검산과 동일한 기준으로 판단한다. 매 호출마다 현재 DB 스냅샷을 system_instruction에 재주입해(서버는 stateless) 값이 오래되지 않도록 한다.
+3. 수정이 필요하면 agent가 `update_posting_fields` 도구 호출(function calling)을 내보낸다. 서버는 이를 **즉시 실행하지 않고** 변경 제안(diff 카드)만 돌려준다 — Claude Code 스타일의 권한 박스에서 사람이 결정한다. 선택지는 두 가지다:
+   - **예, 적용** (Enter / Y): 제안된 변경을 실제 DB에 반영한다.
+   - **아니요, 다르게 해주세요** (Esc / N): 인라인 입력창이 열려 어떻게 다르게 하고 싶은지 바로 적는다. 그 지시(`note`)가 거부 결과와 함께 모델에 전달되어, 모델이 사유를 되묻는 중간 단계 없이 한 번에 대안을 제시한다. (입력 없이 보내면 단순 거부로 처리되어 모델이 다른 방법을 제안한다.)
+4. **✓ 검토 완료**를 누르면 전체 대화를 근거로 `user_comment`를 생성하고, `AdminCheck(source='agent')`를 생성하며, 대화 전체(트랜스크립트 + 적용된 변경 + 생성 코멘트)를 `AgentReviewSession`으로 영구 저장한다. `gpt_error_log`는 보존되어 `has_error`는 유지되지만, `AdminCheck` 생성만으로 `에러 미검토` 큐(`admin_check__isnull=True`)에서 빠진다.
+
+수정 가능한 필드는 `error_review` 프리셋의 편집 가능 필드(`review_agent.AGENT_EDITABLE_FIELDS` = `_COMMON_EXPAND_EDITABLE`)로 한정된다. 핵심 로직은 `postings/review_agent.py`(`propose_turn` / `apply_turn` / `generate_comment` / `build_contents` / `apply_update`)에 있다.
+
+**Admin 커스텀 URL (대화형 agent 검토):**
+
+| URL 패턴 | 설명 |
+|---|---|
+| `review/agent-context/` | AJAX GET ?id=: 모달 좌측 패널용 케이스 컨텍스트(필드 스냅샷·본문·에러 로그) |
+| `review/agent-chat/` | AJAX POST {id, messages}: 한 턴 진행 — 제안만, **DB 미변경** |
+| `review/agent-tool/` | AJAX POST {id, messages, tool_call, decision, note}: 권한 박스 결정 처리. 이 엔드포인트만 (승인 시) DB를 변경한다. 거부 시 `note`(사용자가 적은 수정 방향)가 있으면 모델에 함께 전달한다 |
+| `review/agent-finish/` | AJAX POST {id, messages}: 검토 완료 — 코멘트 생성 + `AdminCheck(source='agent')` + `AgentReviewSession` 영구 저장 |
 
 ### 시급 올림 보정 일괄 적용
 
@@ -565,8 +590,6 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `is_salary_disclosed` | BooleanField | 급여 명시 여부 |
 | `is_one_time_work` | BooleanField | 일회성 근무 여부 |
 | `one_time_hourly_wage` | FloatField | 일회성 근무 시급 (만원) |
-| `wage_type` | CharField | `monthly` / `yearly` / 기타 |
-| `wage_raw` | FloatField | LLM이 추출한 원본 급여 (만원) |
 | `net_hourly_wage` | FloatField | 세후 시급 (만원) |
 | `net_salary` | FloatField | 세후 월급 (만원) |
 | `weekday_work_days` | FloatField | 평일 근무 일수 |
@@ -597,9 +620,21 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 |---|---|---|
 | `posting` | OneToOneField → JobPosting | 검토 대상 공고 (1:1) |
 | `checked_at` | DateTimeField | 검토 완료 시각 (자동 기록) |
-| `source` | CharField (choices) | 검토 주체 — `admin`(관리자 직접 검토) / `llm`(LLM 자동 검토). 기본값 `admin` |
+| `source` | CharField (choices) | 검토 주체 — `admin`(관리자 직접 검토) / `llm`(LLM 자동 검토) / `agent`(대화형 agent 검토). 기본값 `admin` |
 
 사람이 대시보드에서 **검토 완료**를 실행하면 기존 `source='llm'` 레코드는 `source='admin'`으로 승격된다.
+
+### AgentReviewSession
+
+대화형 agent 검토 1회의 영구 기록(트랜스크립트 + 적용된 변경 + 생성 코멘트). 한 공고를 시점을 달리해 여러 번 검토할 수 있으므로 `posting`은 ForeignKey(다대일)다. `에러 미검토` 탭에서 **✓ 검토 완료** 시 생성된다.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `posting` | ForeignKey → JobPosting | 검토 대상 공고 (N:1) |
+| `created_at` | DateTimeField | 세션 생성 시각 (`auto_now_add`) |
+| `transcript` | JSONField | 대화 전체 (`[{role, ...}]`) |
+| `applied_changes` | JSONField | 승인되어 반영된 변경 누적 (`[{field, old, new}]`) |
+| `generated_comment` | TextField | 검토 완료 시 생성된 `user_comment` |
 
 ### PipelineRun
 

@@ -13,7 +13,7 @@ from django.utils.html import format_html
 from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilder
 
 from .forms import PipelineRunForm
-from .models import AdminCheck, JobPosting, PipelineRun
+from .models import AdminCheck, AgentReviewSession, JobPosting, PipelineRun
 from .review_presets import (
     FIELD_META,
     REVIEW_PRESETS,
@@ -30,6 +30,7 @@ _login_events: dict[int, threading.Event] = {}
 @admin.register(JobPosting)
 class JobPostingAdmin(admin.ModelAdmin):
     change_list_template = 'admin/postings/jobposting/change_list.html'
+    change_form_template = 'admin/postings/jobposting/change_form.html'
 
     list_display = (
         'title_short', 'created_at', 'platform', 'city',
@@ -61,7 +62,7 @@ class JobPostingAdmin(admin.ModelAdmin):
             'fields': ('url', 'platform', 'created_at', 'inserted_at', 'title', 'pharmacy_name', 'city', 'big_category'),
         }),
         ('급여', {
-            'fields': ('is_salary_disclosed', 'wage_type', 'wage_raw', 'net_hourly_wage', 'net_salary', 'is_one_time_work', 'one_time_hourly_wage'),
+            'fields': ('is_salary_disclosed', 'net_hourly_wage', 'net_salary', 'is_one_time_work', 'one_time_hourly_wage'),
         }),
         ('근무 일정', {
             'fields': (
@@ -132,6 +133,14 @@ class JobPostingAdmin(admin.ModelAdmin):
                  name='jobposting_review_verify_candidates'),
             path('review/auto-verify/', self.admin_site.admin_view(self.review_auto_verify_view),
                  name='jobposting_review_auto_verify'),
+            path('review/agent-context/', self.admin_site.admin_view(self.review_agent_context_view),
+                 name='jobposting_review_agent_context'),
+            path('review/agent-chat/', self.admin_site.admin_view(self.review_agent_chat_view),
+                 name='jobposting_review_agent_chat'),
+            path('review/agent-tool/', self.admin_site.admin_view(self.review_agent_tool_view),
+                 name='jobposting_review_agent_tool'),
+            path('review/agent-finish/', self.admin_site.admin_view(self.review_agent_finish_view),
+                 name='jobposting_review_agent_finish'),
         ]
         return custom + urls
 
@@ -394,6 +403,116 @@ class JobPostingAdmin(admin.ModelAdmin):
         # 주의: counts 를 최상위로 펼치면 'ok' 키가 성공 플래그와 충돌하므로 'counts' 로 감싼다.
         return JsonResponse({'ok': True, 'results': results, 'counts': counts})
 
+    # ── 대화형 agent 검토 (3단계 에러 케이스) ──────────────────
+
+    def review_agent_context_view(self, request):
+        """AJAX GET ?id=: 모달 좌측 정보 패널용 케이스 컨텍스트."""
+        from .review_agent import field_snapshot
+        pk = request.GET.get('id')
+        posting = JobPosting.objects.filter(pk=pk).first()
+        if posting is None:
+            return JsonResponse({'error': 'not found'}, status=404)
+        return JsonResponse({
+            'id': posting.pk,
+            'title': (posting.title or '').strip(),
+            'fields': field_snapshot(posting),
+            'gpt_error_log': posting.gpt_error_log or '',
+            'body': posting.body or '',
+            'is_reviewed': AdminCheck.objects.filter(posting_id=pk).exists(),
+            'url': posting.url,
+        })
+
+    def _agent_prepare(self, request):
+        """POST 검증 + posting 로드 + Gemini 클라이언트 준비. (ok, payload | JsonResponse)."""
+        if request.method != 'POST':
+            return False, JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return False, JsonResponse({'ok': False, 'error': 'invalid JSON'}, status=400)
+        posting = JobPosting.objects.filter(pk=data.get('id')).first()
+        if posting is None:
+            return False, JsonResponse({'ok': False, 'error': 'not found'}, status=404)
+
+        from django.conf import settings
+        if not settings.GOOGLE_API_KEY:
+            return False, JsonResponse({'ok': False, 'error': 'GOOGLE_API_KEY 미설정'}, status=500)
+        from google import genai
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        return True, (posting, client, settings.LLM_MODEL, data)
+
+    def review_agent_chat_view(self, request):
+        """AJAX POST {id, messages}: 한 턴 진행(제안만, DB 미변경)."""
+        ok, payload = self._agent_prepare(request)
+        if not ok:
+            return payload
+        posting, client, model_name, data = payload
+        from .review_agent import field_snapshot, propose_turn
+        try:
+            result = propose_turn(posting, data.get('messages') or [], client, model_name)
+        except Exception as e:  # noqa: BLE001
+            print(f'[agent-chat ERROR] pk={posting.pk}: {e}')
+            return JsonResponse({'ok': False, 'error': str(e)[:200]}, status=500)
+        result['ok'] = True
+        result['fields'] = field_snapshot(posting)
+        return JsonResponse(result)
+
+    def review_agent_tool_view(self, request):
+        """AJAX POST {id, messages, tool_call, decision, note}: 권한 박스 결정 처리.
+
+        이 엔드포인트만 DB를 변경한다(approved 인 경우에만).
+        """
+        ok, payload = self._agent_prepare(request)
+        if not ok:
+            return payload
+        posting, client, model_name, data = payload
+        decision = data.get('decision')
+        if decision not in ('approved', 'rejected'):
+            return JsonResponse({'ok': False, 'error': 'invalid decision'}, status=400)
+        from .review_agent import apply_turn, field_snapshot
+        try:
+            result = apply_turn(
+                posting, data.get('messages') or [], data.get('tool_call') or {},
+                decision, client, model_name, note=data.get('note') or '',
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f'[agent-tool ERROR] pk={posting.pk}: {e}')
+            return JsonResponse({'ok': False, 'error': str(e)[:200]}, status=500)
+        posting.refresh_from_db()
+        result['ok'] = True
+        result['fields'] = field_snapshot(posting)
+        return JsonResponse(result)
+
+    def review_agent_finish_view(self, request):
+        """AJAX POST {id, messages}: 검토 완료 — 코멘트 생성 + AdminCheck + 세션 영구 저장.
+
+        gpt_error_log 는 보존하므로 has_error 는 유지된다(결정 1). AdminCheck 생성만으로
+        error_review 큐(admin_check__isnull=True)에서 빠진다.
+        """
+        ok, payload = self._agent_prepare(request)
+        if not ok:
+            return payload
+        posting, client, model_name, data = payload
+        messages = data.get('messages') or []
+        from .review_agent import collect_applied_changes, generate_comment
+        try:
+            comment = generate_comment(posting, messages, client, model_name)
+        except Exception as e:  # noqa: BLE001
+            print(f'[agent-finish ERROR] pk={posting.pk}: {e}')
+            comment = '[대화형 검토] 검토 완료.'
+        posting.user_comment = comment
+        posting.save()
+        AdminCheck.objects.get_or_create(
+            posting=posting, defaults={'source': AdminCheck.SOURCE_AGENT},
+        )
+        AgentReviewSession.objects.create(
+            posting=posting,
+            transcript=messages,
+            applied_changes=collect_applied_changes(messages),
+            generated_comment=comment,
+        )
+        return JsonResponse({'ok': True, 'comment': comment})
+
     @staticmethod
     def _format_display(value, field_type, field_name=''):
         """셀 표시 값 포맷팅."""
@@ -580,8 +699,16 @@ def _start_pipeline_thread(run_id: int, kwargs: dict):
 
 @admin.register(AdminCheck)
 class AdminCheckAdmin(admin.ModelAdmin):
-    list_display = ('posting', 'checked_at')
-    list_filter = (('checked_at', DateRangeFilterBuilder(title='검토 일시')),)
+    list_display = ('posting', 'source', 'checked_at')
+    list_filter = ('source', ('checked_at', DateRangeFilterBuilder(title='검토 일시')),)
     ordering = ('-checked_at',)
     readonly_fields = ('posting', 'checked_at')
+
+
+@admin.register(AgentReviewSession)
+class AgentReviewSessionAdmin(admin.ModelAdmin):
+    list_display = ('posting', 'created_at', 'generated_comment')
+    list_filter = (('created_at', DateRangeFilterBuilder(title='검토 일시')),)
+    ordering = ('-created_at',)
+    readonly_fields = ('posting', 'created_at', 'transcript', 'applied_changes', 'generated_comment')
 

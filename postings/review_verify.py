@@ -1,10 +1,10 @@
 """
-3단계 비에러 이상치 공고를 LLM(Gemini)으로 재검산하는 서비스.
+2단계 outlier 검토 공고를 LLM(Gemini)으로 재검산하는 서비스.
 
 리뷰 대시보드의 '🤖 LLM으로 자동 검토' 버튼이 호출한다. 공고당 Gemini 1회 호출로
 이미 추출되어 저장된 값이 본문과 일치하는지 판정하고:
-  - 일치   → AdminCheck(source='llm') 생성 (검토 완료, 3단계 집합에서 제외)
-  - 불일치 → gpt_error_log 기록 → JobPosting.save() 가 has_error=True 설정 (2단계로 이동)
+  - 일치   → AdminCheck(source='llm') 생성 (검토 완료, 2단계 집합에서 제외)
+  - 불일치 → gpt_error_log 기록 → JobPosting.save() 가 has_error=True 설정 (3단계 에러 케이스 재검토로 이동)
 
 기존 추출 파이프라인(prompts/tasks)을 재실행하지 않고, 도메인 규칙만 압축한
 단일 검산 프롬프트를 사용한다. JSON 파싱은 pipeline.tasks.extract_json 을 재사용한다.
@@ -17,16 +17,20 @@ from .models import AdminCheck
 from .review_presets import REVIEW_PRESETS, VERIFY_PRESET_KEYS  # noqa: F401 (재노출)
 
 
-VERIFY_SYSTEM_PROMPT = """당신은 약국 약사 구인 공고 데이터의 검수 전문가입니다.
-이미 추출되어 DB에 저장된 값들이 공고 본문과 일치하는지 '검증'하는 것이 임무입니다.
-이미 저장된 값을 본문과 대조해 맞는지 틀린지만 판정하는 검증 작업입니다.
-
-[도메인 규칙]
+# 약국 구인공고 도메인 지식. 검산(verify)과 대화형 수정(agent)이 같은 기준을 쓰도록 공유 상수로 둔다.
+DOMAIN_RULES = """[도메인 규칙]
 - 세전/세후: '세전'·'세전계약'이면 세전, '실수령'·'세후'면 세후. 단서가 없으면 세후로 간주.
   net_salary/net_hourly_wage 는 세전 공고라면 세금 환산이 적용된 '세후' 값이어야 하며 보통 원금보다 작다.
 - 일회성 근무(is_one_time_work): 일회성/지속성을 가르는 기준은 '반복 여부'이지 빈도가 아니다.
   한 번으로 끝나면(특정 날짜·단기 1일~2개월·대타) true, 정기적으로 반복되면 빈도가 아무리 낮아도 false.
 - 일회성 시급(one_time_hourly_wage) 단위 '만원'. 일당/총액으로 적혔으면 근무시간으로 나눠 시급으로 환산.
+- ★ 근무 형태별로 채워지는 급여·일정 필드가 정해져 있다(파이프라인 동작). 각 형태에서 '해당하는 필드만' 검토 대상으로 본다:
+  · 일회성 근무(is_one_time_work=True): 급여는 one_time_hourly_wage 한 필드로 표현한다.
+    이때 net_hourly_wage·net_salary·평일/주말 근무일·출퇴근 시각은 '지속성 근무 전용' 필드라 null 인 상태가 정상값이다.
+    → 일회성 공고는 일회성 판단과 one_time_hourly_wage 만 본문과 대조한다.
+  · 지속성 근무(is_one_time_work=False): 급여는 net_hourly_wage·net_salary 로, 일정은 평일/주말 근무일·출퇴근 시각으로 표현한다.
+    이때 one_time_hourly_wage 는 null 인 상태가 정상값이다.
+    → 지속성 공고는 이 급여·일정 필드들을 본문과 대조한다.
 - 시각은 24시간제 실수. 오전 9시=9.0, 오후 6시 30분=18.5. 명시 없으면 null.
 - 근무일수(평일 weekday_work_days 0~5, 주말 weekend_work_days 0~2)는 각 요일을 '실제로 근무하는 주의 비율'로
   환산해 합산한 '주당 평균'이다. 매주=1, 격주=0.5, 월1회=0.25, 월2회=0.5.
@@ -44,9 +48,10 @@ VERIFY_SYSTEM_PROMPT = """당신은 약국 약사 구인 공고 데이터의 검
   평일 시각(weekday_*)도 평일 근무일 구성에 대한 가중평균이다. 시각과 근무일수는 한 묶음으로 본다.
 - 본문에 정보가 없는 항목은 null 로 둔다(본문에 근거가 있는 값만 채운다).
 
-[net_hourly_wage 판정 — 중요]
+[net_hourly_wage 판정 — 중요] (지속성 근무, is_one_time_work=False 인 경우에 적용)
 - net_hourly_wage 는 다른 값에서 계산되는 세후 시급(파생값)이다. 본문에서 계산되는 세후 시급과 일치하면 정상이다.
-- 급여 형태와 무관하게 (세후 급여)÷(월 근무시간)으로 항상 도출되는 값이므로, 어떤 급여 형태에서도 존재한다.
+- 지속성 근무에서는 급여 형태와 무관하게 (세후 급여)÷(월 근무시간)으로 도출되어 항상 존재한다.
+  (일회성 근무는 위 '근무 형태별 필드' 규칙대로 one_time_hourly_wage 로만 급여를 보며, net_hourly_wage 는 null 이 정상값이다.)
 - 월 근무시간은 출근~퇴근 시각의 차이로 계산한다(점심·휴게 시간을 포함한 gross 기준). net_hourly_wage 도 이 gross 시간으로 나눈 값이다.
 - 계산상 ±0.1 만원 정도의 반올림 차이는 일치로 간주하라.
 
@@ -77,7 +82,14 @@ VERIFY_SYSTEM_PROMPT = """당신은 약국 약사 구인 공고 데이터의 검
   · 양자택일을 평균냈거나(예: 1.5), 근무일수는 해석A·시각은 해석B인 '혼합'이면 is_correct=false.
     (예: weekend_work_days=1.5 인데 weekend_start_time=9 → 일요일이 빠진 토요일 단독 시각이라 모순.)
 - 혼합/평균으로 판정하면, 위 컨벤션(최대 시나리오)으로 통일한 값을 suggested 로 제시하라.
-  근무일 구성을 정하면 그 구성으로 가중평균한 시각을 함께 제시한다.
+  근무일 구성을 정하면 그 구성으로 가중평균한 시각을 함께 제시한다."""
+
+
+VERIFY_SYSTEM_PROMPT = """당신은 약국 약사 구인 공고 데이터의 검수 전문가입니다.
+이미 추출되어 DB에 저장된 값들이 공고 본문과 일치하는지 '검증'하는 것이 임무입니다.
+이미 저장된 값을 본문과 대조해 맞는지 틀린지만 판정하는 검증 작업입니다.
+
+""" + DOMAIN_RULES + """
 
 [출력 형식] 아래 JSON 객체 '하나만' 출력하세요. 출력은 오직 이 JSON 뿐입니다.
 - 모든 값이 본문과 일치하면 (explanation 에 '왜 맞다고 판단했는지' 근거를 한두 문장으로 채운다.
@@ -109,15 +121,13 @@ _GEN_CONFIG = types.GenerateContentConfig(
 
 
 # 검산 시 LLM 에게 보여줄 현재 추출값 필드 (필드명, 사람용 라벨)
-# wage_raw/wage_type 는 필수 필드가 아니라 비어있어도 무방하므로 검토 대상에서 제외한다.
+# COMMON 은 두 형태 공통, 나머지는 근무 형태별로만 보여준다(일회성↔지속성 필드 혼동 방지).
 _VALUE_FIELDS_COMMON = [
     ('is_one_time_work', '일회성 근무'),
-    ('net_salary', '세후 월급(만원)'),
-    ('net_hourly_wage', '세후 시급(만원)'),
 ]
 
 # wrong_fields 에 등장하더라도 무시할 필드 (검토 대상 아님)
-_IGNORED_FIELDS = {'wage_raw', 'wage_type', 'net_salary'}
+_IGNORED_FIELDS = {'net_salary'}
 
 
 def _values_equal(a, b):
@@ -151,6 +161,8 @@ _VALUE_FIELDS_ONETIME = [
     ('one_time_hourly_wage', '일회성 시급(만원)'),
 ]
 _VALUE_FIELDS_CONTINUOUS = [
+    ('net_salary', '세후 월급(만원)'),
+    ('net_hourly_wage', '세후 시급(만원)'),
     ('weekday_work_days', '평일 근무일'),
     ('weekend_work_days', '주말 근무일'),
     ('weekday_start_time', '평일 출근'),

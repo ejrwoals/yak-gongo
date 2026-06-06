@@ -35,6 +35,7 @@
   </div>
   <div class="controls-right">
     <span id="auto-verify-progress" style="display:none;"></span>
+    <button id="agent-review-btn" style="display:none;">💬 AI agent 대화형 검토</button>
     <button id="auto-verify-btn" style="display:none;">🤖 LLM으로 자동 검토</button>
   </div>
 </div>
@@ -64,6 +65,9 @@
     <div id="verify-log" class="verify-log"></div>
   </div>
 </div>
+
+<!-- AI agent 대화형 검토 모달 (공용 부분템플릿) -->
+{% include "admin/postings/jobposting/agent_chat.html" %}
 
 <style>
   /* 프리셋 탭 */
@@ -333,12 +337,16 @@
     document.getElementById('sort-toggle').textContent = state.sortDir.toUpperCase();
     document.getElementById('controls-bar').style.display = 'flex';
 
-    // LLM 자동 검토 버튼 노출 제어 (검산 가능한 3단계 프리셋에서만)
+    // LLM 자동 검토 버튼 노출 제어 (검산 가능한 2단계 outlier 프리셋에서만)
     const canVerify = VERIFY_PRESET_KEYS.includes(key);
     const verifyBtn = document.getElementById('auto-verify-btn');
     verifyBtn.style.display = canVerify ? '' : 'none';
     verifyBtn.disabled = false;
     document.getElementById('auto-verify-progress').style.display = 'none';
+
+    // AI agent 대화형 검토 버튼 노출 (3단계 에러 케이스 재검토 프리셋에서만)
+    const agentBtn = document.getElementById('agent-review-btn');
+    agentBtn.style.display = key === 'error_review' ? '' : 'none';
   }
 
   // 정렬 컨트롤
@@ -448,6 +456,12 @@
     const verifyBtn = document.getElementById('auto-verify-btn');
     if (verifyBtn && verifyBtn.style.display !== 'none') {
       verifyBtn.textContent = checked.length > 0 ? `🤖 선택 ${checked.length}건 검토` : '🤖 LLM으로 자동 검토';
+    }
+
+    // AI agent 검토 버튼 라벨
+    const agentBtn = document.getElementById('agent-review-btn');
+    if (agentBtn && agentBtn.style.display !== 'none') {
+      agentBtn.textContent = checked.length > 0 ? `💬 선택 ${checked.length}건 대화형 검토` : '💬 AI agent 대화형 검토';
     }
   }
 
@@ -711,6 +725,32 @@
       });
       detailRow.dataset.highlighted = '1';
     }
+  }
+
+  // ── AI agent 대화형 검토 (공용 위젯 AgentChat 사용) ──────────────
+  document.getElementById('agent-review-btn').addEventListener('click', openAgentReview);
+
+  function openAgentReview() {
+    if (state.preset !== 'error_review') return;
+    const checked = Array.from(document.querySelectorAll('.row-select:checked')).map(cb => parseInt(cb.value));
+    let ids = checked;
+    if (ids.length === 0) {
+      ids = Array.from(document.querySelectorAll('.row-select')).map(cb => parseInt(cb.value));
+    }
+    if (ids.length === 0) { alert('검토할 공고가 없습니다.'); return; }
+    AgentChat.open({
+      ids: ids,
+      onCaseFinished: function(id) {
+        const row = document.querySelector(`tr.review-row[data-pk="${id}"]`);
+        if (row) {
+          row.classList.add('reviewed');
+          const cb = row.querySelector('.row-select');
+          if (cb) cb.checked = false;
+        }
+        loadCounts();
+      },
+      onClosed: function() { loadCounts(); loadData(); },
+    });
   }
 
   // 초기화

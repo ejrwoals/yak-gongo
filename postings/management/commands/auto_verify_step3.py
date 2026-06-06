@@ -1,5 +1,5 @@
 """
-3단계 비에러 이상치 공고를 LLM(Gemini)으로 일괄 자동 검토하는 관리 커맨드.
+2단계 outlier 검토 공고를 LLM(Gemini)으로 일괄 자동 검토하는 관리 커맨드.
 
 웹 대시보드의 '🤖 LLM으로 자동 검토' 버튼과 동일 로직(verify_posting/apply_verdict)을
 CLI 로 실행한다. 대량 일괄 처리·디버깅용.
@@ -18,7 +18,7 @@ from postings.review_verify import apply_verdict, verify_posting
 
 
 class Command(BaseCommand):
-    help = '3단계 비에러 이상치 공고를 LLM(Gemini)으로 일괄 자동 검토'
+    help = '2단계 outlier 검토 공고를 LLM(Gemini)으로 일괄 자동 검토'
 
     def add_arguments(self, parser):
         parser.add_argument('--preset', choices=VERIFY_PRESET_KEYS, default=None,

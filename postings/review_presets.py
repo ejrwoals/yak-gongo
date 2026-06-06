@@ -25,8 +25,6 @@ FIELD_META = {
     'is_salary_disclosed':{'label': '급여 명시',  'type': 'bool'},
     'is_one_time_work':   {'label': '일회성',     'type': 'bool'},
     'one_time_hourly_wage':{'label': '일회성 시급','type': 'float'},
-    'wage_type':          {'label': '급여 유형',  'type': 'char'},
-    'wage_raw':           {'label': '원본 급여',  'type': 'float'},
     'net_hourly_wage':    {'label': '세후 시급',  'type': 'float'},
     'net_salary':         {'label': '세후 월급',  'type': 'float'},
     'weekday_work_days':  {'label': '평일 근무일','type': 'float'},
@@ -49,21 +47,20 @@ FIELD_META = {
 }
 
 
-# ── 3단계 공통 베이스 필터 ──
+# ── 2단계(outlier 검토) 공통 베이스 필터 ──
 _STEP3_BASE = {'has_error': False, 'admin_check__isnull': True}
 
-# ── LLM 자동 검토 버튼을 노출할 3단계 프리셋 ──
+# ── LLM 자동 검토 버튼을 노출할 outlier 검토 프리셋 ──
 # empty_city 는 city 가 LLM 추출이 아니라 geo/mapping 변환 결과라 검산 대상에서 제외.
 VERIFY_PRESET_KEYS = ['workdays_outlier', 'onetime_wage', 'salary_missing', 'pretax_check']
 
-# ── 공통 편집 가능 필드 (2·3단계 확장 영역) ──
+# ── 공통 편집 가능 필드 (확장 영역) ──
 _COMMON_EXPAND_EDITABLE = [
     'weekday_work_days', 'weekend_work_days',
-    'weekday_start_time', 'weekday_end_time',
-    'weekend_start_time', 'weekend_end_time',
+    'weekday_start_time', 'weekend_start_time',
+    'weekday_end_time', 'weekend_end_time',
     'hours_per_week', 'hours_per_month',
     'net_hourly_wage', 'net_salary',
-    'wage_type', 'wage_raw',
     'is_one_time_work', 'one_time_hourly_wage',
     'city', 'big_category',
     'user_comment',
@@ -90,26 +87,11 @@ REVIEW_PRESETS = OrderedDict([
         'default_sort_dir': 'desc',
     }),
 
-    # ── 2단계: 에러 검토 ──
-    ('error_review', {
-        'label': '에러 미검토',
-        'description': 'has_error=True & 미검토(AdminCheck 없음). 에러 로그를 확인하고, 값이 맞으면 확인 처리, 틀리면 수정 후 저장.',
-        'group': '2단계: 에러 검토',
-        'columns': ['title', 'platform', 'created_at', 'net_hourly_wage', 'net_salary',
-                     'weekday_work_days', 'weekend_work_days',
-                     'is_one_time_work', 'one_time_hourly_wage',
-                     'is_reviewed'],
-        'editable': _COMMON_EXPAND_EDITABLE,
-        'expandable': ['gpt_error_log', 'body'],
-        'default_sort': 'updated_at',
-        'default_sort_dir': 'desc',
-    }),
-
-    # ── 3단계: 근무일 이상치 ──
+    # ── 2단계: outlier 검토 ──
     ('workdays_outlier', {
         'label': '근무일 이상치',
         'description': '평일 근무일 <0 또는 >5 또는 소수점, 주말 근무일이 0/0.5/1/2 외의 값인 공고. 총 근무일 기준 정렬로 이상치 탐색.',
-        'group': '3단계: 비에러 이상치',
+        'group': '2단계: outlier 검토',
         'verify_focus': '특히 평일/주말 근무 일수가 본문과 정확히 일치하는지 집중 검토하세요. 출퇴근 시각도 함께 확인.',
         'columns': ['title', 'pharmacy_name', 'weekday_work_days', 'weekend_work_days',
                      'total_work_days', 'hours_per_week', 'is_reviewed'],
@@ -122,7 +104,7 @@ REVIEW_PRESETS = OrderedDict([
     ('onetime_wage', {
         'label': '일회성 시급 검토',
         'description': 'is_one_time_work=True이면서 시급이 null이거나 2.5~4.0 범위를 벗어난 공고.',
-        'group': '3단계: 비에러 이상치',
+        'group': '2단계: outlier 검토',
         'verify_focus': '특히 일회성 시급(만원, 일당/총액이면 근무시간으로 나눠 환산)이 본문과 일치하는지, 일회성 근무 여부 판단이 맞는지 집중 검토하세요.',
         'columns': ['title', 'pharmacy_name', 'one_time_hourly_wage', 'is_one_time_work',
                      'is_reviewed'],
@@ -133,14 +115,14 @@ REVIEW_PRESETS = OrderedDict([
         'nulls_first': True,
     }),
 
-    # ── 3단계: 지속성 급여 ──
+    # ── 2단계: 지속성 급여 ──
     ('salary_missing', {
         'label': '지속성 시급 검토',
         'description': 'is_one_time_work=False이면서 net_hourly_wage/net_salary가 null이거나 시급이 2.0~4.0 범위를 벗어난 공고.',
-        'group': '3단계: 비에러 이상치',
+        'group': '2단계: outlier 검토',
         'verify_focus': '특히 급여 금액·급여 유형(시급/월급/연봉)·세전세후 구분이 본문과 정확히 일치하는지 집중 검토하세요.',
         'columns': ['title', 'pharmacy_name', 'net_hourly_wage', 'net_salary',
-                     'wage_raw', 'wage_type', 'is_reviewed'],
+                     'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body'],
         'default_sort': 'inserted_at',
@@ -149,25 +131,40 @@ REVIEW_PRESETS = OrderedDict([
     ('pretax_check', {
         'label': '세전 확인',
         'description': '본문에 "세전"이 포함된 공고. 세전→세후 환산이 제대로 적용되었는지 확인.',
-        'group': '3단계: 비에러 이상치',
+        'group': '2단계: outlier 검토',
         'verify_focus': '특히 본문이 "세전" 금액을 명시했는데 세후로 잘못 처리되지 않았는지(net_salary가 원본 급여보다 적절히 작은지) 집중 검토하세요.',
         'columns': ['title', 'pharmacy_name', 'net_hourly_wage', 'net_salary',
-                     'wage_raw', 'is_reviewed'],
+                     'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body'],
         'default_sort': 'inserted_at',
         'default_sort_dir': 'asc',
     }),
 
-    # ── 3단계: 지역 ──
+    # ── 2단계: 지역 ──
     ('empty_city', {
         'label': '지역 미분류',
         'description': 'city가 빈 문자열인 공고. geo/mapping.py의 conversion_dict에 없는 주소일 가능성. 직접 입력 필요.',
-        'group': '3단계: 비에러 이상치',
+        'group': '2단계: outlier 검토',
         'columns': ['title', 'pharmacy_name', 'city', 'big_category', 'platform',
                      'is_reviewed'],
         'editable': _COMMON_EXPAND_EDITABLE,
         'expandable': ['body'],
+        'default_sort': 'updated_at',
+        'default_sort_dir': 'desc',
+    }),
+
+    # ── 3단계: 에러 케이스 재검토 ──
+    ('error_review', {
+        'label': '에러 미검토',
+        'description': 'has_error=True & 미검토(AdminCheck 없음). 에러 로그를 확인하고, 값이 맞으면 확인 처리, 틀리면 수정 후 저장.',
+        'group': '3단계: 에러 케이스 재검토',
+        'columns': ['title', 'platform', 'created_at', 'net_hourly_wage', 'net_salary',
+                     'weekday_work_days', 'weekend_work_days',
+                     'is_one_time_work', 'one_time_hourly_wage',
+                     'is_reviewed'],
+        'editable': _COMMON_EXPAND_EDITABLE,
+        'expandable': ['gpt_error_log', 'body'],
         'default_sort': 'updated_at',
         'default_sort_dir': 'desc',
     }),

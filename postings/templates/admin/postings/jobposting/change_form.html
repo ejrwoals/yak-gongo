@@ -1,0 +1,34 @@
+{% extends "admin/change_form.html" %}
+
+{# 상세(변경) 화면 상단 도구모음에 '대화형 agent 검토' 버튼을 히스토리 옆에 추가 #}
+{% block object-tools-items %}
+  <li>
+    <a href="#" id="agent-review-detail-btn" class="agent-detail-tool">💬 대화형 agent 검토</a>
+  </li>
+  {{ block.super }}
+{% endblock %}
+
+{% block content %}
+{{ block.super }}
+
+{# 공용 대화형 검토 모달 + 버튼 와이어링 (단건 검토) #}
+{% include "admin/postings/jobposting/agent_chat.html" %}
+<style>
+  .agent-detail-tool { background: #6f42c1 !important; color: #fff !important; }
+  .agent-detail-tool:hover { background: #5a32a3 !important; }
+</style>
+<script>
+  (function() {
+    var btn = document.getElementById('agent-review-detail-btn');
+    if (!btn) return;  // 추가(add) 화면 등 객체가 없으면 버튼 자체가 없음
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      if (!window.AgentChat) return;
+      AgentChat.open({
+        ids: [{{ original.pk }}],
+        onClosed: function() { location.reload(); },  // 수정 반영분을 상세 폼에 반영
+      });
+    });
+  })();
+</script>
+{% endblock %}

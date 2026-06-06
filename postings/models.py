@@ -20,8 +20,6 @@ class JobPosting(models.Model):
     is_salary_disclosed = models.BooleanField(null=True, blank=True)
     is_one_time_work = models.BooleanField(null=True, blank=True)
     one_time_hourly_wage = models.FloatField(null=True, blank=True)
-    wage_type = models.CharField(max_length=50, blank=True)
-    wage_raw = models.FloatField(null=True, blank=True)
     net_hourly_wage = models.FloatField(null=True, blank=True)
     net_salary = models.FloatField(null=True, blank=True)
 
@@ -81,9 +79,11 @@ class AdminCheck(models.Model):
     """관리자가 검토 완료한 공고 기록. 레코드 존재 = 검토 완료, 없음 = 미검토."""
     SOURCE_ADMIN = 'admin'
     SOURCE_LLM = 'llm'
+    SOURCE_AGENT = 'agent'
     SOURCE_CHOICES = [
         (SOURCE_ADMIN, '관리자 검토'),
         (SOURCE_LLM, 'LLM 자동 검토'),
+        (SOURCE_AGENT, '대화형 agent 검토'),
     ]
 
     posting = models.OneToOneField(JobPosting, on_delete=models.CASCADE, related_name='admin_check')
@@ -95,6 +95,26 @@ class AdminCheck(models.Model):
 
     def __str__(self):
         return f"checked({self.source}): {self.posting_id}"
+
+
+class AgentReviewSession(models.Model):
+    """대화형 agent 검토 1회의 영구 기록(트랜스크립트 + 적용된 변경 + 생성 코멘트).
+
+    한 공고를 시점을 달리해 여러 번 검토할 수 있으므로 ForeignKey(다대일)로 둔다.
+    """
+    posting = models.ForeignKey(
+        JobPosting, on_delete=models.CASCADE, related_name='agent_sessions',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    transcript = models.JSONField(default=list)        # [{role:'user'|'model'|'tool', ...}]
+    applied_changes = models.JSONField(default=list)   # [{field, old, new}] 누적
+    generated_comment = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"agent_session({self.posting_id}) @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
 class PipelineRun(models.Model):

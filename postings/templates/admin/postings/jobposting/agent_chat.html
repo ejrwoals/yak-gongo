@@ -1,0 +1,585 @@
+{% comment %}
+대화형 agent 검토 모달 — 대시보드/상세 change form 공용 부분템플릿.
+window.AgentChat.open({ids, onCaseFinished, onClosed}) 로 연다.
+엔드포인트는 admin URL 절대경로라 어느 페이지에서든 동작한다. self-contained CSS.
+{% endcomment %}
+<div id="agent-modal" class="agentm-overlay" style="display:none;">
+  <div class="agent-modal-box">
+    <div class="agentm-header">
+      <strong id="agent-modal-title">💬 AI agent 대화형 검토</strong>
+      <div class="agentm-actions">
+        <span id="agent-progress" class="agent-progress"></span>
+        <button id="agent-close-btn" class="agentm-close">닫기</button>
+      </div>
+    </div>
+    <div class="agent-body">
+      <div id="agent-info" class="agent-info">
+        <div class="agent-info-title" id="agent-info-title">—</div>
+        <div class="agent-info-section">
+          <strong>현재 필드값</strong>
+          <div class="agent-fields" id="agent-fields"></div>
+        </div>
+        <div class="agent-info-section">
+          <strong>에러 로그</strong>
+          <pre class="agent-pre agent-pre-err" id="agent-errorlog"></pre>
+        </div>
+        <div class="agent-info-section grow">
+          <strong>원문</strong>
+          <pre class="agent-pre" id="agent-body"></pre>
+        </div>
+      </div>
+      <div class="agent-chat">
+        <div id="agent-log" class="agent-log"></div>
+        <div class="agent-input-bar">
+          <textarea id="agent-input" class="agent-input" rows="2" placeholder="메시지를 입력하세요… (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+          <button id="agent-send-btn" class="agent-send-btn">전송</button>
+        </div>
+        <div class="agent-footer">
+          <button id="agent-finish-btn" class="agent-finish-btn">✓ 검토 완료</button>
+          <button id="agent-skip-btn" class="agent-skip-btn">건너뛰기 →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* 오버레이/헤더/스피너 (self-contained) */
+  .agentm-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .agentm-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; background: #6f42c1; color: #fff;
+  }
+  .agentm-header strong { font-size: 15px; }
+  .agentm-actions { display: flex; gap: 8px; align-items: center; }
+  .agentm-close {
+    padding: 5px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+    font-weight: bold; background: #e9ecef; color: #333;
+  }
+  .agentm-close:hover { background: #d3d9df; }
+  .agentm-spinner {
+    display: inline-block; width: 11px; height: 11px; flex: none;
+    border: 2px solid #d9c9f0; border-top-color: #6f42c1; border-radius: 50%;
+    animation: agentm-spin 0.7s linear infinite;
+  }
+  @keyframes agentm-spin { to { transform: rotate(360deg); } }
+
+  .agent-modal-box {
+    background: #fff; width: min(1320px, 97vw); height: 93vh;
+    border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .agent-progress { color: #e7defa; font-size: 12px; margin-right: 4px; }
+  .agent-body { display: flex; flex: 1; min-height: 0; }
+
+  /* 좌측 정보 패널 — 세로 flex, 원문이 남은 공간을 채우고 자체 스크롤 */
+  .agent-info {
+    width: 42%; min-width: 360px; border-right: 1px solid #e6e6e6;
+    padding: 14px 16px; background: #fbfbfc;
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  }
+  .agent-info-title { flex: none; font-weight: bold; font-size: 14px; margin-bottom: 10px; color: #222; line-height: 1.4; }
+  .agent-info-section { flex: none; margin-bottom: 12px; }
+  .agent-info-section.grow { flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; margin-bottom: 0; }
+  .agent-info-section > strong { display: block; font-size: 12px; color: #6f42c1; margin-bottom: 5px; }
+  .agent-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; font-size: 12px; }
+  .agent-field { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
+  .agent-field .fk { color: #777; white-space: nowrap; }
+  .agent-field .fv { color: #222; font-variant-numeric: tabular-nums; word-break: break-all; text-align: right; }
+  .agent-field.just-changed { background: #fff3bf; transition: background 1.2s ease; }
+  .agent-pre {
+    background: #fff; color: #333; border: 1px solid #e0e0e0; padding: 8px; border-radius: 4px;
+    font-family: inherit; font-size: 12px; line-height: 1.6; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; margin: 0;
+  }
+  .agent-pre-err { max-height: 130px; }
+  .agent-info-section.grow .agent-pre { flex: 1; min-height: 0; }
+
+  /* 우측 채팅 */
+  .agent-chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .agent-log { flex: 1; overflow-y: auto; padding: 16px; background: #f7f7f9; }
+  .agent-msg { margin-bottom: 14px; display: flex; flex-direction: column; max-width: 86%; }
+  .agent-msg.user { margin-left: auto; align-items: flex-end; }
+  .agent-msg.model { margin-right: auto; align-items: flex-start; }
+  .agent-bubble { padding: 9px 13px; border-radius: 12px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .agent-msg.user .agent-bubble { background: #e7e9ee; color: #222; border-bottom-right-radius: 3px; }
+  .agent-msg.model .agent-bubble { background: #fff; color: #222; border: 1px solid #e6e6e6; border-bottom-left-radius: 3px; white-space: normal; }
+  .agent-msg.model .agent-marker { font-size: 11px; color: #6f42c1; font-weight: bold; margin-bottom: 3px; }
+  .agent-msg.model .agent-bubble ul, .agent-msg.model .agent-bubble ol { margin: 4px 0; padding-left: 22px; }
+  .agent-msg.model .agent-bubble li { margin: 2px 0; }
+  .agent-msg.model .agent-bubble strong { font-weight: 700; }
+  .agent-msg.model .agent-bubble code {
+    background: #f1ecfb; color: #5a32a3; padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  .agent-thinking { color: #6f42c1; font-size: 12.5px; display: flex; align-items: center; gap: 7px; padding: 4px 2px; }
+
+  /* tool 호출 카드 */
+  .agent-tool-card {
+    margin: 10px 0; border: 1px solid #c9b8ec; border-radius: 8px; overflow: hidden;
+    background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 92%;
+  }
+  .agent-tool-card.approved { border-color: #2b8a3e; }
+  .agent-tool-card.rejected { opacity: 0.6; border-color: #adb5bd; }
+  .agent-tool-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 12px; background: #f3eefb; font-size: 12px; font-weight: bold; color: #5a32a3;
+  }
+  .agent-tool-card.approved .agent-tool-head { background: #ebfbee; color: #2b8a3e; }
+  .agent-tool-card.rejected .agent-tool-head { background: #f1f3f5; color: #868e96; }
+  .agent-tool-diff { padding: 8px 12px; font-size: 12px; }
+  .agent-diff-row { display: grid; grid-template-columns: 38% 1fr; gap: 6px; padding: 3px 0; align-items: baseline; }
+  .agent-diff-row.unchanged { opacity: 0.45; }
+  .agent-diff-label { color: #555; }
+  .agent-diff-val .old { color: #b02a37; text-decoration: line-through; }
+  .agent-diff-val .arrow { color: #999; margin: 0 5px; }
+  .agent-diff-val .new { color: #2b8a3e; font-weight: bold; }
+  .agent-diff-reason { color: #888; font-size: 11px; padding: 4px 12px 8px; font-family: inherit; }
+
+  /* 권한 박스 */
+  .agent-perm { border-top: 1px dashed #d6c8f0; padding: 10px 12px; font-family: inherit; background: #faf7ff; }
+  .agent-perm-q { font-size: 12.5px; color: #333; margin-bottom: 7px; font-weight: bold; }
+  .agent-perm-opt {
+    display: block; width: 100%; text-align: left; padding: 7px 10px; margin: 4px 0;
+    border: 1px solid #d9d2ea; border-radius: 5px; background: #fff; cursor: pointer; font-size: 12.5px; color: #333;
+  }
+  .agent-perm-opt:hover { border-color: #6f42c1; background: #f3eefb; }
+  .agent-perm-opt .k { color: #999; font-size: 11px; float: right; }
+  .agent-perm-running { color: #6f42c1; font-size: 12.5px; display: flex; align-items: center; gap: 7px; }
+  /* 거부 입력 폼 */
+  .agent-reject-form { border-top: 1px dashed #d6c8f0; padding: 10px 12px; background: #faf7ff; }
+  .agent-reject-input {
+    width: 100%; box-sizing: border-box; resize: vertical; padding: 7px 9px; font-size: 12.5px;
+    font-family: inherit; border: 1px solid #d9d2ea; border-radius: 5px; color: #333;
+  }
+  .agent-reject-input:focus { outline: none; border-color: #6f42c1; }
+  .agent-reject-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .agent-reject-back { border: none; background: none; color: #868e96; cursor: pointer; font-size: 12px; padding: 4px; }
+  .agent-reject-back:hover { color: #555; text-decoration: underline; }
+  .agent-reject-send {
+    border: 1px solid #6f42c1; background: #6f42c1; color: #fff; border-radius: 5px;
+    padding: 6px 12px; cursor: pointer; font-size: 12.5px;
+  }
+  .agent-reject-send:hover { background: #5a34a0; }
+  .agent-reject-send .k { color: #d9caf5; font-size: 11px; margin-left: 4px; }
+  .agent-applied { font-size: 12px; color: #2b8a3e; padding: 6px 12px; border-top: 1px solid #eee; }
+  .agent-rejected-note { font-size: 12px; color: #868e96; padding: 6px 12px; border-top: 1px solid #eee; }
+
+  /* 입력/푸터 */
+  .agent-input-bar { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #e6e6e6; align-items: flex-end; }
+  .agent-input {
+    flex: 1; resize: none; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 13px; font-family: inherit; line-height: 1.5;
+  }
+  .agent-input:focus { outline: none; border-color: #6f42c1; box-shadow: 0 0 3px rgba(111,66,193,0.3); }
+  .agent-input:disabled { background: #f1f1f3; }
+  .agent-send-btn {
+    padding: 8px 16px; border: none; border-radius: 6px; background: #6f42c1; color: #fff;
+    font-weight: bold; cursor: pointer; font-size: 13px;
+  }
+  .agent-send-btn:hover { background: #5a32a3; }
+  .agent-send-btn:disabled { background: #b9a6e0; cursor: default; }
+  .agent-footer { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid #eee; background: #fafafa; }
+  .agent-finish-btn {
+    padding: 7px 16px; border: none; border-radius: 6px; background: #28a745; color: #fff;
+    font-weight: bold; cursor: pointer; font-size: 13px;
+  }
+  .agent-finish-btn:hover { background: #218838; }
+  .agent-finish-btn:disabled { background: #9ed3ab; cursor: default; }
+  .agent-skip-btn {
+    padding: 7px 14px; border: 1px solid #ccc; border-radius: 6px; background: #fff; color: #555;
+    cursor: pointer; font-size: 13px;
+  }
+  .agent-skip-btn:hover { background: #f1f1f1; }
+  .agent-skip-btn:disabled { opacity: 0.5; cursor: default; }
+</style>
+
+<script>
+(function() {
+  const URLS = {
+    context: "{% url 'admin:jobposting_review_agent_context' %}",
+    chat:    "{% url 'admin:jobposting_review_agent_chat' %}",
+    tool:    "{% url 'admin:jobposting_review_agent_tool' %}",
+    finish:  "{% url 'admin:jobposting_review_agent_finish' %}",
+  };
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+  const $ = id => document.getElementById(id);
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  const agentRun = {
+    queue: [], index: 0, posting: null, messages: [],
+    busy: false, pending: null, rejecting: false,
+    onCaseFinished: null, onClosed: null,
+  };
+  let agentCardEl = null;
+
+  $('agent-close-btn').addEventListener('click', closeAgentModal);
+  $('agent-send-btn').addEventListener('click', submitInput);
+  $('agent-finish-btn').addEventListener('click', finishCase);
+  $('agent-skip-btn').addEventListener('click', skipCase);
+  $('agent-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitInput(); }
+  });
+  document.addEventListener('keydown', agentPermKeyHandler);
+
+  function closeAgentModal() {
+    if (agentRun.busy && !confirm('진행 중인 작업이 있습니다. 닫을까요?')) return;
+    $('agent-modal').style.display = 'none';
+    agentRun.pending = null;
+    if (agentRun.onClosed) agentRun.onClosed();
+  }
+
+  function loadCase(i) {
+    agentRun.index = i;
+    agentRun.messages = [];
+    agentRun.pending = null;
+    agentCardEl = null;
+    agentRun.posting = agentRun.queue[i];
+    $('agent-progress').textContent = `케이스 ${i + 1}/${agentRun.queue.length}`;
+    $('agent-log').innerHTML = '';
+    $('agent-finish-btn').disabled = false;
+    $('agent-skip-btn').disabled = false;
+    fetch(URLS.context + '?id=' + agentRun.posting)
+      .then(r => r.json())
+      .then(ctx => {
+        if (ctx.error) { alert('케이스 로드 실패: ' + ctx.error); return; }
+        renderInfoPanel(ctx);
+        sendTurn(null);  // 빈 messages → 서버가 브리핑 생성
+      })
+      .catch(() => alert('케이스 로드 실패'));
+  }
+
+  function renderInfoPanel(ctx) {
+    $('agent-info-title').textContent = ctx.title || '(제목 없음)';
+    renderFields(ctx.fields, null);
+    $('agent-errorlog').textContent = ctx.gpt_error_log || '(없음)';
+    $('agent-body').textContent = ctx.body || '(본문 없음)';
+  }
+
+  function renderFields(fields, changedSet) {
+    $('agent-fields').innerHTML = (fields || []).map(f => {
+      const cls = (changedSet && changedSet.has(f.field)) ? ' just-changed' : '';
+      return `<div class="agent-field${cls}"><span class="fk">${escapeHtml(f.label)}</span><span class="fv">${escapeHtml(f.value)}</span></div>`;
+    }).join('');
+  }
+
+  function scrollLog() { const l = $('agent-log'); l.scrollTop = l.scrollHeight; }
+
+  function appendUserMsg(text) {
+    const d = document.createElement('div');
+    d.className = 'agent-msg user';
+    d.innerHTML = `<div class="agent-bubble">${escapeHtml(text)}</div>`;
+    $('agent-log').appendChild(d);
+    scrollLog();
+  }
+
+  // 경량 마크다운 렌더러 (XSS 안전: escape 먼저 → bold/code/list 변환)
+  function renderMarkdown(md) {
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inline = s => esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+    const lines = String(md).replace(/\r\n/g, '\n').split('\n');
+    const stack = [];
+    let html = '', prevBlank = false;
+    const pop = () => (stack.pop().tag === 'ol' ? '</ol>' : '</ul>');
+    const closeAll = () => { while (stack.length) html += pop(); };
+    const closeTo = ind => { while (stack.length && stack[stack.length - 1].indent > ind) html += pop(); };
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, '');
+      if (!line.trim()) { if (!stack.length && !prevBlank && html) html += '<br>'; prevBlank = true; continue; }
+      prevBlank = false;
+      const mU = line.match(/^(\s*)[*\-]\s+(.*)$/);
+      const mO = line.match(/^(\s*)\d+\.\s+(.*)$/);
+      if (mU || mO) {
+        const indent = (mU ? mU[1] : mO[1]).length;
+        const tag = mU ? 'ul' : 'ol';
+        const content = mU ? mU[2] : mO[2];
+        closeTo(indent);
+        const top = stack[stack.length - 1];
+        if (!top || top.indent < indent) { html += '<' + tag + '>'; stack.push({ indent, tag }); }
+        else if (top.indent === indent && top.tag !== tag) { html += pop(); html += '<' + tag + '>'; stack.push({ indent, tag }); }
+        html += '<li>' + inline(content) + '</li>';
+      } else {
+        closeAll();
+        html += inline(line) + '<br>';
+      }
+    }
+    closeAll();
+    return html;
+  }
+
+  function appendModelMsg(text) {
+    if (!text) return;
+    const d = document.createElement('div');
+    d.className = 'agent-msg model';
+    d.innerHTML = `<div class="agent-marker">● agent</div><div class="agent-bubble">${renderMarkdown(text)}</div>`;
+    $('agent-log').appendChild(d);
+    scrollLog();
+  }
+
+  function showThinking(on) {
+    let el = $('agent-thinking');
+    if (on && !el) {
+      el = document.createElement('div');
+      el.id = 'agent-thinking';
+      el.className = 'agent-thinking';
+      el.innerHTML = '<span class="agentm-spinner"></span> 생각 중…';
+      $('agent-log').appendChild(el);
+      scrollLog();
+    } else if (!on && el) { el.remove(); }
+  }
+
+  function setBusy(busy, permLock) {
+    agentRun.busy = busy;
+    const lock = busy || permLock;
+    $('agent-input').disabled = lock;
+    $('agent-send-btn').disabled = lock;
+    $('agent-finish-btn').disabled = lock;
+    $('agent-skip-btn').disabled = lock;
+    if (!lock) $('agent-input').focus();
+  }
+
+  function sendTurn(text) {
+    if (agentRun.busy) return;
+    if (text) { agentRun.messages.push({ role: 'user', text }); appendUserMsg(text); }
+    setBusy(true);
+    showThinking(true);
+    fetch(URLS.chat, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ id: agentRun.posting, messages: agentRun.messages }),
+    })
+      .then(r => r.json())
+      .then(data => { showThinking(false); processResponse(data, false); })
+      .catch(() => { showThinking(false); setBusy(false); appendModelMsg('⚠️ 요청 실패. 다시 시도해 주세요.'); });
+  }
+
+  function submitInput() {
+    if (agentRun.pending || agentRun.busy) return;
+    const inp = $('agent-input');
+    const text = inp.value.trim();
+    if (!text) return;
+    inp.value = '';
+    sendTurn(text);
+  }
+
+  function processResponse(data, fromTool) {
+    if (!data || data.ok === false) {
+      setBusy(false);
+      appendModelMsg('⚠️ 오류: ' + ((data && data.error) || '알 수 없음'));
+      return;
+    }
+    if (data.fields && !fromTool) renderFields(data.fields, null);
+    if (data.type === 'tool_request') {
+      agentRun.messages.push({ role: 'model', text: data.text || '', tool_call: data.tool_call });
+      if (data.text) appendModelMsg(data.text);
+      agentRun.pending = data.tool_call;
+      renderToolCard(data.tool_call);
+      setBusy(false, true);
+    } else {
+      agentRun.messages.push({ role: 'model', text: data.reply });
+      appendModelMsg(data.reply);
+      setBusy(false);
+    }
+  }
+
+  function renderToolCard(tc) {
+    const card = document.createElement('div');
+    card.className = 'agent-tool-card pending';
+    card.innerHTML =
+      `<div class="agent-tool-head"><span>🔧 ${escapeHtml(tc.name)}</span><span class="agent-tool-state"></span></div>` +
+      `<div class="agent-tool-diff">${renderDiff(tc.diff)}</div>` +
+      renderReasons(tc.diff) +
+      `<div class="agent-tool-slot"></div>`;
+    $('agent-log').appendChild(card);
+    agentCardEl = card;
+    renderPermOptions(card.querySelector('.agent-tool-slot'));
+    scrollLog();
+  }
+
+  function renderPermOptions(slot) {
+    agentRun.rejecting = false;
+    slot.innerHTML = permBoxHtml();
+    slot.querySelectorAll('.agent-perm-opt').forEach(b => {
+      b.addEventListener('click', () => {
+        if (b.dataset.decision === 'rejected') showRejectInput();
+        else decide(b.dataset.decision);
+      });
+    });
+  }
+
+  function showRejectInput() {
+    if (!agentCardEl || !agentRun.pending) return;
+    const slot = agentCardEl.querySelector('.agent-tool-slot');
+    if (!slot) return;
+    agentRun.rejecting = true;
+    slot.innerHTML =
+      '<div class="agent-reject-form">' +
+        '<textarea class="agent-reject-input" rows="2" ' +
+          'placeholder="어떻게 다르게 할지 알려주세요. 예: 시급은 그대로 두고 근무요일만 고쳐줘"></textarea>' +
+        '<div class="agent-reject-actions">' +
+          '<button type="button" class="agent-reject-back">← 뒤로</button>' +
+          '<button type="button" class="agent-reject-send">보내기 <span class="k">Enter</span></button>' +
+        '</div>' +
+      '</div>';
+    const ta = slot.querySelector('.agent-reject-input');
+    const send = () => { agentRun.rejecting = false; decide('rejected', ta.value.trim()); };
+    slot.querySelector('.agent-reject-send').addEventListener('click', send);
+    slot.querySelector('.agent-reject-back').addEventListener('click', () => renderPermOptions(slot));
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      else if (e.key === 'Escape') { e.preventDefault(); renderPermOptions(slot); }
+    });
+    ta.focus();
+    scrollLog();
+  }
+
+  function renderDiff(diff) {
+    return (diff || []).map(d => {
+      const cls = d.changed ? '' : ' unchanged';
+      const val = d.changed
+        ? `<span class="old">${escapeHtml(d.current)}</span><span class="arrow">→</span><span class="new">${escapeHtml(d.proposed)}</span>`
+        : `${escapeHtml(d.current)} <span class="arrow">(변경 없음)</span>`;
+      return `<div class="agent-diff-row${cls}"><span class="agent-diff-label">${escapeHtml(d.label)}</span><span class="agent-diff-val">${val}</span></div>`;
+    }).join('');
+  }
+  function renderReasons(diff) {
+    const rs = (diff || []).filter(d => d.changed && d.reason).map(d => `· ${escapeHtml(d.reason)}`);
+    return rs.length ? `<div class="agent-diff-reason">${rs.join('<br>')}</div>` : '';
+  }
+  function permBoxHtml() {
+    return '<div class="agent-perm">' +
+      '<div class="agent-perm-q">이 수정을 적용할까요?</div>' +
+      '<button class="agent-perm-opt" data-decision="approved">1. 예, 적용 <span class="k">Enter / Y</span></button>' +
+      '<button class="agent-perm-opt" data-decision="rejected">2. 아니요, 다르게 해주세요 <span class="k">Esc / N</span></button>' +
+      '</div>';
+  }
+
+  function decide(decision, note) {
+    const tc = agentRun.pending;
+    if (!tc) return;
+    note = note || '';
+    agentRun.pending = null;
+    setBusy(true);
+    if (decision === 'rejected' && note) appendUserMsg(note);
+    if (agentCardEl) {
+      const slot = agentCardEl.querySelector('.agent-tool-slot');
+      if (slot) slot.innerHTML = '<div class="agent-perm-running"><span class="agentm-spinner"></span> ' +
+        (decision === 'approved' ? '수정 적용 중…' : '처리 중…') + '</div>';
+    }
+    fetch(URLS.tool, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ id: agentRun.posting, messages: agentRun.messages, tool_call: tc, decision, note }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const applied = data.applied || [];
+        agentRun.messages.push({ role: 'tool', tool_call_id: tc.id, name: tc.name, decision, applied, note });
+        finalizeCard(decision, applied, note);
+        if (data.fields) {
+          const changed = new Set(applied.map(a => a.field));
+          renderFields(data.fields, changed);
+          setTimeout(() => document.querySelectorAll('#agent-fields .agent-field.just-changed')
+            .forEach(el => el.classList.remove('just-changed')), 1500);
+        }
+        processResponse(data, true);
+      })
+      .catch(() => { setBusy(false); appendModelMsg('⚠️ 적용 요청 실패.'); });
+  }
+
+  function finalizeCard(decision, applied, note) {
+    if (!agentCardEl) return;
+    const slot = agentCardEl.querySelector('.agent-tool-slot');
+    const st = agentCardEl.querySelector('.agent-tool-state');
+    agentCardEl.classList.remove('pending');
+    if (decision === 'approved') {
+      agentCardEl.classList.add('approved');
+      if (st) st.textContent = '✅ ' + applied.length + '개 필드 수정됨';
+      slot.innerHTML = applied.length
+        ? '<div class="agent-applied">' + applied.map(a =>
+            `✅ ${escapeHtml(a.label)} ${escapeHtml(a.old)} → ${escapeHtml(a.new)}`).join('<br>') + '</div>'
+        : '<div class="agent-applied">변경된 필드 없음</div>';
+    } else {
+      agentCardEl.classList.add('rejected');
+      if (st) st.textContent = '거부됨';
+      slot.innerHTML = '<div class="agent-rejected-note">' +
+        (note ? '거부됨 — 요청: ' + escapeHtml(note) : '거부됨 — 다른 방법을 제안하도록 요청했습니다.') + '</div>';
+    }
+    agentCardEl = null;
+  }
+
+  function agentPermKeyHandler(e) {
+    if (!agentRun.pending) return;
+    if ($('agent-modal').style.display === 'none') return;
+    if (agentRun.rejecting) return;  // 거부 입력창이 자체 키 처리
+    const k = e.key.toLowerCase();
+    if (e.key === 'Enter' || k === 'y') { e.preventDefault(); decide('approved'); }
+    else if (e.key === 'Escape' || k === 'n') { e.preventDefault(); showRejectInput(); }
+  }
+
+  function finishCase() {
+    if (agentRun.busy || agentRun.pending) return;
+    setBusy(true);
+    const finishedId = agentRun.posting;
+    fetch(URLS.finish, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ id: agentRun.posting, messages: agentRun.messages }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          appendModelMsg('✅ 검토 완료 — 코멘트: ' + data.comment);
+          if (agentRun.onCaseFinished) agentRun.onCaseFinished(finishedId);
+          nextCase();
+        } else {
+          setBusy(false);
+          appendModelMsg('⚠️ 완료 실패: ' + (data.error || ''));
+        }
+      })
+      .catch(() => { setBusy(false); appendModelMsg('⚠️ 완료 요청 실패.'); });
+  }
+
+  function skipCase() {
+    if (agentRun.busy || agentRun.pending) return;
+    nextCase();
+  }
+
+  function nextCase() {
+    const next = agentRun.index + 1;
+    if (next < agentRun.queue.length) {
+      setBusy(false);
+      setTimeout(() => loadCase(next), 500);
+    } else {
+      appendModelMsg('🎉 모든 케이스 검토를 마쳤습니다.');
+      agentRun.busy = false;
+      $('agent-finish-btn').disabled = true;
+      $('agent-skip-btn').disabled = true;
+      $('agent-input').disabled = true;
+      $('agent-send-btn').disabled = true;
+    }
+  }
+
+  // 공개 API: AgentChat.open({ids:[...], onCaseFinished(id), onClosed()})
+  window.AgentChat = {
+    open: function(opts) {
+      opts = opts || {};
+      agentRun.queue = opts.ids || [];
+      agentRun.onCaseFinished = opts.onCaseFinished || null;
+      agentRun.onClosed = opts.onClosed || null;
+      if (!agentRun.queue.length) { alert('검토할 공고가 없습니다.'); return; }
+      $('agent-modal').style.display = 'flex';
+      loadCase(0);
+    }
+  };
+})();
+</script>
