@@ -490,7 +490,10 @@ def generate_comment(posting, messages, client, model_name):
         model=model_name,
         contents=[types.Content(role='user', parts=[types.Part(text=transcript)])],
         config=types.GenerateContentConfig(
-            system_instruction=sys, temperature=0.3, max_output_tokens=512,
+            # 1~3문장 요약이라 thinking 불필요. thinking 을 끄고(예산 0) 한도를 넉넉히 둬
+            # 코멘트가 MAX_TOKENS 로 문장 중간에 잘리지 않도록 한다.
+            system_instruction=sys, temperature=0.3, max_output_tokens=2048,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     text = (response.text or '').strip()
