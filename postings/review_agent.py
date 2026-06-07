@@ -209,7 +209,11 @@ def _normalize_updates(updates):
             except (TypeError, ValueError):
                 continue  # 숫자가 아니면 무시
             net = round(calculate_net_salary(gross), 2)
-            reason = (u.get('reason') or '').strip() or f'세전 {gross}만원을 세후로 환산'
+            # 모델은 세전 기준으로 제안하지만 저장값은 세후다. 환산이 일어났다는
+            # 사실을 reason 맨 앞에 항상 붙여 "왜 91이 86.46이 됐는지" 혼란을 막는다.
+            note = f'세전 {gross:g}만원을 세후 {net:g}만원으로 자동 환산'
+            extra = (u.get('reason') or '').strip()
+            reason = f'{note} ({extra})' if extra else note
             out.append({'field': 'net_salary', 'value': str(net), 'reason': reason})
         else:
             out.append(u)
