@@ -385,9 +385,11 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 **파생 필드는 agent가 직접 수정하지 못한다 (서버 재계산):** `hours_per_week` · `hours_per_month` · `net_hourly_wage`(`AGENT_DERIVED_FIELDS`)는 LLM이 직접 손계산하면 오차가 생기므로 편집 대상에서 제외된다. agent는 기반 입력값(근무 일정, `net_salary`)만 제안하고, 승인된 수정이 반영된 직후 서버가 `recompute_derived()`로 파이프라인과 동일한 공식(주당 시간 = (퇴근−출근)×근무일, 월 시간 = 주당×4.34, 세후 시급 = `ceil_hourly_wage(세후 월급 ÷ 월 시간)`)을 적용해 이 값들을 결정론적으로 다시 채운다. 자동 재계산된 변경분도 diff(`auto=True`)에 표시된다.
 
-**세전→세후 환산은 가상 필드로 위임:** 본문이 세전 금액을 제시하면 agent가 `net_salary`를 직접 계산하지 않고 가상 입력 필드 `net_salary_pretax`(세전 월급, 연봉이면 ÷12)로 제안한다. 서버가 `_normalize_updates()`에서 파이프라인 공식(`pipeline.salary.calculate_net_salary`)으로 세후 월급을 환산해 `net_salary`에 반영한다. (별도 계산기 도구를 두면 함수 호출이 늘어 thinking과 충돌하므로 가상 필드로 처리.)
+**세전→세후 환산은 가상 필드로 위임 + 검산:** 본문이 세전 금액을 제시하면 agent가 `net_salary`를 직접 계산하지 않고 가상 입력 필드 `net_salary_pretax`(세전 월급, 연봉이면 ÷12)로 제안한다. 서버가 `_normalize_updates()`에서 파이프라인 공식(`pipeline.salary.calculate_net_salary`)으로 세후 월급을 환산해 `net_salary`에 반영한다. (별도 계산기 도구를 두면 함수 호출이 늘어 thinking과 충돌하므로 가상 필드로 처리.) system_instruction에 세후 환산 회귀식(`세후월급 = 5.35 + 0.904394 × 세전월급 − 0.000143950695 × 세전월급²`)을 명시해, agent가 저장된 `net_salary`를 그냥 신뢰하지 않고 본문의 세전 금액으로 기대 세후값을 직접 검산하게 한다 — 저장값이 기대값과 허용 오차 안이면 변경이 일어나지 않고, 벗어나면 `net_salary_pretax`로 교정을 제안한다(환산 드리프트 적발). 회귀식에 4대보험·소득세 공제가 이미 반영돼 있으므로 별도 공제 메커니즘을 환각하지 않도록 못박았다.
 
 수정 제안 가능한 필드는 `error_review` 프리셋의 편집 가능 필드에서 파생 필드를 뺀 `review_agent.AGENT_EDITABLE_FIELDS`(`= AGENT_VISIBLE_FIELDS − AGENT_DERIVED_FIELDS`)와 가상 필드 `net_salary_pretax`로 한정된다. 모달 좌측 패널에는 파생 필드를 포함한 전체 값(`AGENT_VISIBLE_FIELDS`)이 `[자동계산]` 표시와 함께 노출된다. 핵심 로직은 `postings/review_agent.py`(`propose_turn` / `apply_turn` / `generate_comment` / `build_contents` / `apply_update` / `recompute_derived` / `_normalize_updates`)에 있다.
+
+**값 동일 판정 허용 오차(`review_verify._values_equal`):** 자동 검산의 "현재값이 사실상 맞으면 정상"(wrong_fields 제외) 판정과 agent diff(제안값이 현재값과 같으면 변경으로 치지 않음)는 같은 `_values_equal()`을 공유한다. 허용 오차는 스케일 무관 **상대 3%**(`abs(a−b) ≤ 0.03 × max(|a|,|b|)`)로 통일돼 있다 — 월급 400만원이면 ±12만원, 시급 3.5만원이면 ±0.1만원 수준으로 단위 크기에 비례해 자동 조정된다. (고정 ±0.1만원 절대 오차를 쓰던 이전 방식은 월급 스케일에서 지나치게 빡빡했다.) LLM이 읽는 `DOMAIN_RULES`에도 "약 3% 이내면 일치"로 동일하게 기술돼 있다.
 
 **Admin 커스텀 URL (대화형 agent 검토):**
 

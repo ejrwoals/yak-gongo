@@ -53,7 +53,7 @@ DOMAIN_RULES = """[도메인 규칙]
 - 지속성 근무에서는 급여 형태와 무관하게 (세후 급여)÷(월 근무시간)으로 도출되어 항상 존재한다.
   (일회성 근무는 위 '근무 형태별 필드' 규칙대로 one_time_hourly_wage 로만 급여를 보며, net_hourly_wage 는 null 이 정상값이다.)
 - 월 근무시간은 출근~퇴근 시각의 차이로 계산한다(점심·휴게 시간을 포함한 gross 기준). net_hourly_wage 도 이 gross 시간으로 나눈 값이다.
-- 계산상 ±0.1 만원 정도의 반올림 차이는 일치로 간주하라.
+- 계산 결과가 저장값과 약 3% 이내로 비슷하면 일치로 간주하라(반올림·환산 공식 차이를 흡수하는 허용 오차).
 
 [현재값이 사실상 맞으면 정상으로 인정한다]
 - 제안하려는 값(suggested)이 현재값(current)과 사실상 같으면 그 필드는 정상이다 — wrong_fields 에서 제외하라.
@@ -130,15 +130,23 @@ _VALUE_FIELDS_COMMON = [
 _IGNORED_FIELDS = {'net_salary'}
 
 
+# 값 동일 판정 허용 오차: 스케일 무관하게 상대 3% 로 통일한다.
+# (월급 400만원이면 ±12만원, 시급 3.5만원이면 ±0.105만원 — 단위 크기에 비례해 자동 조정.)
+_REL_TOL = 0.03  # 3%
+
+
 def _values_equal(a, b):
     """current 와 suggested 가 사실상 같은 값인지 판단.
 
-    - 숫자: ±0.1 허용 오차. 이때 None 은 0 으로 본다(근무일/시각에서 '값 없음'과 0 은 의미 차이 없음).
+    - 숫자: 허용 오차 = 3% × max(|a|,|b|). None 은 0 으로 본다(근무일/시각에서
+      '값 없음'과 0 은 의미 차이 없음). 둘 다 0 이면 정확히 같을 때만 동일로 본다.
     - 문자열: 공백·대소문자 무시 비교. None 은 빈 문자열로 본다.
     """
     # 숫자 비교 (None → 0)
     try:
-        return abs(float(0 if a is None else a) - float(0 if b is None else b)) <= 0.1
+        fa = float(0 if a is None else a)
+        fb = float(0 if b is None else b)
+        return abs(fa - fb) <= _REL_TOL * max(abs(fa), abs(fb))
     except (TypeError, ValueError):
         pass
     # 문자열 비교 (None → '')

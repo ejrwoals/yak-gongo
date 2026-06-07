@@ -22,6 +22,23 @@ class AgentEditableFieldsTests(TestCase):
             self.assertIn(f, ra.AGENT_VISIBLE_FIELDS)
 
 
+class ValuesEqualToleranceTests(TestCase):
+    """허용 오차: 스케일 무관 상대 3% 통일."""
+
+    def test_relative_tolerance_uniform(self):
+        from postings.review_verify import _values_equal
+        # 스케일 무관하게 3% 이내는 같게, 초과는 다르게
+        self.assertTrue(_values_equal(400, 410))    # 2.5%
+        self.assertFalse(_values_equal(400, 420))   # 5%
+        self.assertTrue(_values_equal(3.5, 3.55))   # ~1.4%
+        self.assertFalse(_values_equal(3.5, 3.7))   # ~5.4%
+
+    def test_zero_values(self):
+        from postings.review_verify import _values_equal
+        self.assertTrue(_values_equal(None, 0))     # 둘 다 0
+        self.assertTrue(_values_equal(0, 0.0))
+
+
 class PretaxConversionTests(TestCase):
     """net_salary_pretax(세전 월급) 가상 필드는 파이프라인 공식으로 net_salary 로 환산된다."""
 
