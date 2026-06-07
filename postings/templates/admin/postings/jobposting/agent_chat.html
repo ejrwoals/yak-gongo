@@ -88,6 +88,7 @@ window.AgentChat.open({ids, onCaseFinished, onClosed}) 로 연다.
   .agent-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; font-size: 12px; }
   .agent-field { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
   .agent-field .fk { color: #777; white-space: nowrap; }
+  .agent-field .fk .fd { color: #adb5bd; font-size: 10px; }
   .agent-field .fv { color: #222; font-variant-numeric: tabular-nums; word-break: break-all; text-align: right; }
   .agent-field.just-changed { background: #fff3bf; transition: background 1.2s ease; }
   .agent-pre {
@@ -266,7 +267,8 @@ window.AgentChat.open({ids, onCaseFinished, onClosed}) 로 연다.
   function renderFields(fields, changedSet) {
     $('agent-fields').innerHTML = (fields || []).map(f => {
       const cls = (changedSet && changedSet.has(f.field)) ? ' just-changed' : '';
-      return `<div class="agent-field${cls}"><span class="fk">${escapeHtml(f.label)}</span><span class="fv">${escapeHtml(f.value)}</span></div>`;
+      const tag = f.derived ? ' <span class="fd">(자동)</span>' : '';
+      return `<div class="agent-field${cls}"><span class="fk">${escapeHtml(f.label)}${tag}</span><span class="fv">${escapeHtml(f.value)}</span></div>`;
     }).join('');
   }
 
@@ -506,7 +508,8 @@ window.AgentChat.open({ids, onCaseFinished, onClosed}) 로 연다.
       if (st) st.textContent = '✅ ' + applied.length + '개 필드 수정됨';
       slot.innerHTML = applied.length
         ? '<div class="agent-applied">' + applied.map(a =>
-            `✅ ${escapeHtml(a.label)} ${escapeHtml(a.old)} → ${escapeHtml(a.new)}`).join('<br>') + '</div>'
+            `✅ ${escapeHtml(a.label)} ${escapeHtml(a.old)} → ${escapeHtml(a.new)}` +
+            (a.auto ? ' <span style="color:#888">(자동 계산)</span>' : '')).join('<br>') + '</div>'
         : '<div class="agent-applied">변경된 필드 없음</div>';
     } else {
       agentCardEl.classList.add('rejected');

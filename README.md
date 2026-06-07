@@ -38,7 +38,7 @@ yak-gongo/
 │   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI
 │   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼, LLM 검토 대상/포커스)
 │   ├── review_verify.py     # 2단계 outlier 공고 LLM(Gemini) 재검산 서비스 (DOMAIN_RULES 공유 상수)
-│   ├── review_agent.py      # 3단계 에러 케이스 대화형 agent 검토 서비스 (Gemini multi-turn + function calling)
+│   ├── review_agent.py      # 3단계 에러 케이스 대화형 agent 검토 서비스 (Gemini multi-turn + 구조화 출력, 파생 필드 서버 재계산)
 │   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
@@ -376,12 +376,18 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 1. 버튼을 누르면 채팅 모달이 열린다. 좌측에는 케이스 컨텍스트(현재 DB 필드 스냅샷 + 공고 본문 + 에러 로그)가, 우측에는 대화창이 표시된다. agent는 첫 턴에 에러 로그·현재 DB값·본문을 근거로 **무엇이 왜 틀렸는지 브리핑**하고 수정안을 제시한다.
 2. agent는 같은 도메인 지식(`review_verify.DOMAIN_RULES`)을 공유하므로 자동 검산과 동일한 기준으로 판단한다. 매 호출마다 현재 DB 스냅샷을 system_instruction에 재주입해(서버는 stateless) 값이 오래되지 않도록 한다.
-3. 수정이 필요하면 agent가 `update_posting_fields` 도구 호출(function calling)을 내보낸다. 서버는 이를 **즉시 실행하지 않고** 변경 제안(diff 카드)만 돌려준다 — Claude Code 스타일의 권한 박스에서 사람이 결정한다. 선택지는 두 가지다:
+3. 수정이 필요하면 agent가 **구조화 출력**(`{message, updates}` JSON)으로 바꿀 필드 목록을 내보낸다. 서버는 이를 **즉시 실행하지 않고** 변경 제안(diff 카드)만 돌려준다 — Claude Code 스타일의 권한 박스에서 사람이 결정한다. 선택지는 두 가지다:
    - **예, 적용** (Enter / Y): 제안된 변경을 실제 DB에 반영한다.
    - **아니요, 다르게 해주세요** (Esc / N): 인라인 입력창이 열려 어떻게 다르게 하고 싶은지 바로 적는다. 그 지시(`note`)가 거부 결과와 함께 모델에 전달되어, 모델이 사유를 되묻는 중간 단계 없이 한 번에 대안을 제시한다. (입력 없이 보내면 단순 거부로 처리되어 모델이 다른 방법을 제안한다.)
 4. **✓ 검토 완료**를 누르면 전체 대화를 근거로 `user_comment`를 생성하고, `AdminCheck(source='agent')`를 생성하며, 대화 전체(트랜스크립트 + 적용된 변경 + 생성 코멘트)를 `AgentReviewSession`으로 영구 저장한다. `gpt_error_log`는 보존되어 `has_error`는 유지되지만, `AdminCheck` 생성만으로 `에러 미검토` 큐(`admin_check__isnull=True`)에서 빠진다.
 
-수정 가능한 필드는 `error_review` 프리셋의 편집 가능 필드(`review_agent.AGENT_EDITABLE_FIELDS` = `_COMMON_EXPAND_EDITABLE`)로 한정된다. 핵심 로직은 `postings/review_agent.py`(`propose_turn` / `apply_turn` / `generate_comment` / `build_contents` / `apply_update`)에 있다.
+**왜 function calling이 아니라 구조화 출력인가:** Gemini 2.5는 `thinking + function calling` 조합에서 `MALFORMED_FUNCTION_CALL`을 빈번히(측정 ~12%) 낸다. 응답을 `response_schema`(제약 디코딩, `{message, updates}`)로 강제하면 형식 오류가 구조적으로 불가능해, thinking을 켠 채로도 실패하지 않는다. 검토 완료 코멘트 생성(`generate_comment`)은 반대로 thinking을 끄고(`thinking_budget=0`) 토큰 한도를 높여 코멘트가 잘리지 않게 한다.
+
+**파생 필드는 agent가 직접 수정하지 못한다 (서버 재계산):** `hours_per_week` · `hours_per_month` · `net_hourly_wage`(`AGENT_DERIVED_FIELDS`)는 LLM이 직접 손계산하면 오차가 생기므로 편집 대상에서 제외된다. agent는 기반 입력값(근무 일정, `net_salary`)만 제안하고, 승인된 수정이 반영된 직후 서버가 `recompute_derived()`로 파이프라인과 동일한 공식(주당 시간 = (퇴근−출근)×근무일, 월 시간 = 주당×4.34, 세후 시급 = `ceil_hourly_wage(세후 월급 ÷ 월 시간)`)을 적용해 이 값들을 결정론적으로 다시 채운다. 자동 재계산된 변경분도 diff(`auto=True`)에 표시된다.
+
+**세전→세후 환산은 가상 필드로 위임:** 본문이 세전 금액을 제시하면 agent가 `net_salary`를 직접 계산하지 않고 가상 입력 필드 `net_salary_pretax`(세전 월급, 연봉이면 ÷12)로 제안한다. 서버가 `_normalize_updates()`에서 파이프라인 공식(`pipeline.salary.calculate_net_salary`)으로 세후 월급을 환산해 `net_salary`에 반영한다. (별도 계산기 도구를 두면 함수 호출이 늘어 thinking과 충돌하므로 가상 필드로 처리.)
+
+수정 제안 가능한 필드는 `error_review` 프리셋의 편집 가능 필드에서 파생 필드를 뺀 `review_agent.AGENT_EDITABLE_FIELDS`(`= AGENT_VISIBLE_FIELDS − AGENT_DERIVED_FIELDS`)와 가상 필드 `net_salary_pretax`로 한정된다. 모달 좌측 패널에는 파생 필드를 포함한 전체 값(`AGENT_VISIBLE_FIELDS`)이 `[자동계산]` 표시와 함께 노출된다. 핵심 로직은 `postings/review_agent.py`(`propose_turn` / `apply_turn` / `generate_comment` / `build_contents` / `apply_update` / `recompute_derived` / `_normalize_updates`)에 있다.
 
 **Admin 커스텀 URL (대화형 agent 검토):**
 
@@ -483,7 +489,7 @@ python manage.py run_statistics --output-dir /path/to/output
 | `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 (`raw_decode`로 첫 번째 유효 JSON만 추출) |
 | `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. 급여 미명시 공고는 `None`을 반환하여 저장을 건너뜀. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간 재계산 |
-| `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환. `ceil_hourly_wage(value)` — 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정 |
+| `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환. `calculate_net_salary(gross_monthly)` — 세전 월급 → 세후 월급 환산(공식 본체, 대화형 agent의 세전 환산도 이 함수를 공유). `ceil_hourly_wage(value)` — 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정 |
 
 **직접 사용 예시:**
 
