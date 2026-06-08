@@ -46,12 +46,22 @@ def extract_json(response: str | None) -> tuple[dict | None, str | None]:
         return None, None
 
     json_string = match.group()
-    # JS 스타일 주석 제거
-    json_string = re.sub(r'//.*?(?=\n)|/\*.*?\*/', '', json_string, flags=re.S)
+    # raw_decode: 첫 번째 유효한 JSON 객체만 파싱하고 뒤의 텍스트는 무시
+    # strict=False: 문자열 값 안의 이스케이프되지 않은 제어문자(개행 등)도 허용
+    decoder = json.JSONDecoder(strict=False)
     try:
-        # raw_decode: 첫 번째 유효한 JSON 객체만 파싱하고 뒤의 텍스트는 무시
-        obj, _ = json.JSONDecoder().raw_decode(json_string)
+        obj, _ = decoder.raw_decode(json_string)
         return obj, json_string
+    except json.JSONDecodeError:
+        pass
+
+    # 1차 실패 시에만 JS 스타일 주석 제거 후 재시도.
+    # (주석 제거 정규식은 문자열 값 안의 '//'(예: 근무 표기 '토,일 // 월')도 지워
+    #  멀쩡한 응답을 깨뜨리므로, 정상 파싱이 안 될 때의 폴백으로만 적용한다.)
+    stripped = re.sub(r'//.*?(?=\n)|/\*.*?\*/', '', json_string, flags=re.S)
+    try:
+        obj, _ = decoder.raw_decode(stripped)
+        return obj, stripped
     except json.JSONDecodeError as e:
         print(f'[JSON PARSE ERROR] {e}\n{json_string[:200]}')
         return None, json_string
