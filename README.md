@@ -5,7 +5,7 @@
 ## 목적
 
 - **개인 리뷰 워크플로우**: Django Admin에서 LLM 추출 결과를 확인·수정·체크
-- **통계 공유**: `/stats/` 페이지에서 시급·지역·근무 유형별 통계를 외부에 공개
+- **통계 공유**: 자체 웹 프론트엔드(`web` 앱)의 홈·근무 유형별 페이지에서 시급·지역·근무 유형별 통계를 외부에 공개
 
 ---
 
@@ -16,7 +16,7 @@
 3. [환경 변수](#환경-변수)
 4. [공고 수집 및 처리 (run_pipeline)](#공고-수집-및-처리)
 5. [Django Admin 리뷰 워크플로우](#django-admin-리뷰-워크플로우)
-6. [통계 대시보드](#통계-대시보드)
+6. [웹 대시보드 (web 앱)](#웹-대시보드)
 7. [Notion 통계 생성](#notion-통계-생성)
 8. [모듈별 설명](#모듈별-설명)
 9. [LLM 파이프라인 상세](#llm-파이프라인-상세)
@@ -34,22 +34,27 @@ yak-gongo/
 │   └── urls.py
 │
 ├── postings/                # 핵심 앱: 공고 DB + Admin
-│   ├── models.py            # JobPosting, AdminCheck, AgentReviewSession, PipelineRun
-│   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI
+│   ├── models.py            # JobPosting, AdminCheck, AgentReviewSession, PipelineRun, DashboardSnapshot
+│   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI + 대시보드 스냅샷 갱신 버튼
 │   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼, LLM 검토 대상/포커스)
 │   ├── review_verify.py     # 2단계 outlier 공고 LLM(Gemini) 재검산 서비스 (DOMAIN_RULES 공유 상수)
 │   ├── review_agent.py      # 3단계 에러 케이스 대화형 agent 검토 서비스 (Gemini multi-turn + 구조화 출력, 파생 필드 서버 재계산)
+│   ├── dataframe.py         # build_dataframe() — DB → 통계 호환 pandas DataFrame (run_statistics·웹 대시보드 공유)
+│   ├── dashboard_stats.py   # compute_dashboard_data() — 웹 대시보드용 통계 산출 (matplotlib/Notion 의존성 없는 순수 계산)
 │   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
 │   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
-│   │   ├── run_statistics.py # DB → DataFrame 변환 후 통계 차트 생성
+│   │   ├── run_statistics.py # DB → DataFrame 변환 후 Notion 통계 차트 생성
 │   │   ├── auto_verify_step3.py # 2단계 outlier 공고 LLM 일괄 자동 검토 (CLI)
 │   │   └── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
-│   └── templates/admin/postings/pipelinerun/
-│       ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
-│       ├── run_pipeline.html# 실행 옵션 폼 페이지
-│       └── run_log.html     # 실시간 로그 폴링 페이지
+│   └── templates/admin/postings/
+│       ├── pipelinerun/
+│       │   ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
+│       │   ├── run_pipeline.html# 실행 옵션 폼 페이지
+│       │   └── run_log.html     # 실시간 로그 폴링 페이지
+│       └── dashboardsnapshot/
+│           └── change_list.html # "대시보드 업데이트" 버튼이 추가된 목록
 │
 ├── pipeline/                # LLM 파이프라인 (비즈니스 로직)
 │   ├── prompts.py           # 5개 task 프롬프트 / few-shot
@@ -66,12 +71,14 @@ yak-gongo/
 ├── geo/
 │   └── mapping.py           # 주소 → 지역코드, 지역 대분류 변환
 │
-├── stats/                   # 외부 공개 통계 앱
-│   ├── charts.py            # matplotlib 차트 → base64 PNG
-│   ├── views.py             # dashboard 뷰
-│   ├── urls.py
-│   └── templates/stats/
-│       └── dashboard.html   # 통계 대시보드 페이지
+├── web/                     # 외부 공개 웹 프론트엔드 앱
+│   ├── views.py             # 최신 DashboardSnapshot을 읽어 페이지별 섹션을 템플릿에 임베드
+│   ├── urls.py              # / · /fulltime/ · /weekend/ · /etc/ · /onetime/
+│   ├── templates/web/       # home·fulltime·weekend·etc·onetime.html
+│   └── static/web/js/
+│       ├── charts.js        # 순수 SVG 차트 빌더 (데이터 입력과 분리된 순수 함수)
+│       ├── home.js / fulltime.js / weekend.js / etc.js / onetime.js  # 페이지별 데이터 바인딩
+│       └── ui.js            # 토글 등 인터랙션
 │
 ├── notion-stats/            # Notion 연동 통계 (차트 생성 + Notion 업로드)
 │   └── one_click_statistics.py  # 30종 이상 차트 생성 및 Notion 페이지 업데이트
@@ -154,7 +161,7 @@ python manage.py runserver
 ```
 
 - Admin: http://localhost:8000/admin/
-- 통계 대시보드: http://localhost:8000/stats/
+- 웹 대시보드: http://localhost:8000/
 
 ---
 
@@ -431,21 +438,42 @@ python manage.py auto_verify_step3 --limit 20
 
 ---
 
-## 통계 대시보드
+## 웹 대시보드
 
-http://localhost:8000/stats/ 에서 공개용 통계 페이지를 확인할 수 있다.
+`web` 앱이 제공하는 자체 공개 프론트엔드다. http://localhost:8000/ 에서 확인한다. 모든 시급은 세후 기준이다.
 
-### 제공 차트
+### 페이지 구성
 
-| 차트 | 설명 |
-|---|---|
-| 지역 대분류별 공고 수 | 서울·인천·경기 중부·경기 외곽·지방 비교 |
-| 일회성 vs 지속성 근무 | 근무 유형별 공고 비율 |
-| 주당 근무 시간 히스토그램 | 지속성 근무 전체의 근무 시간 분포 |
-| 주말 파트 세후 시급 (지역별) | 주말만 근무하는 공고의 지역별 세후 시급 버블 차트 |
-| 풀타임 세후 시급 (지역별) | 평일 4일 이상 근무 공고의 지역별 세후 시급 버블 차트 |
+| URL | 페이지 | 내용 |
+|---|---|---|
+| `/` | 홈 | 분석 공고 수, 근무 유형(전국·풀타임·주말 파트·기타 파트·일회성)별 평균 시급, 지역 5분류별 평균 시급 |
+| `/fulltime/` | 풀타임 | 주당 36시간 이상 지속성 근무. 근무시간 히스토그램·시급/월급 산점도(회귀선)·지역별 평균/분포, 퇴직금 보정(시급 ×13/12) 토글 |
+| `/weekend/` | 주말 파트 | 평일 근무 0 & 주말 근무가 있는 공고. 히스토그램·등록일별 산점도·지역별 평균·버블 차트 |
+| `/etc/` | 기타 파트 | 36시간 미만 지속성 근무 중 주말 파트가 아닌 공고. 히스토그램·산점도(회귀선)·지역별 평균·버블 차트 |
+| `/onetime/` | 일회성 단기 | 일회성 근무(시급은 `one_time_hourly_wage`). 등록일별 산점도·지역별 평균·버블 차트·장기 vs 일회성 분포 비교 |
 
-상단 요약 수치: 전체 공고 수, 지속성/일회성 건수, 주말 파트·풀타임 평균 세후 시급
+근무 유형 분류·지역 5분류·퇴직금 보정 등의 정의는 Notion 차트 생성기(`one_click_statistics.py`)와 동일하며, 그 정의를 matplotlib/Notion 의존성 없이 순수 계산으로 옮긴 것이 `postings/dashboard_stats.py`다.
+
+### 데이터 파이프라인 (스냅샷 방식)
+
+웹 페이지는 DB를 매 요청마다 집계하지 않고, 관리자가 명시적으로 만든 **스냅샷**을 읽어 렌더한다.
+
+```
+DashboardSnapshot 갱신 (Admin "대시보드 업데이트" 버튼)
+    ↓
+postings/dataframe.build_dataframe()      # DB 전체 → 통계 호환 DataFrame
+    ↓
+postings/dashboard_stats.compute_dashboard_data(df)  # 페이지별 수치·데이터셋 dict 산출
+    ↓
+DashboardSnapshot(data=…, posting_count=…) 저장 (created_at = "Last Update")
+    ↓
+web/views: 최신 스냅샷의 해당 섹션을 json_script로 템플릿에 임베드
+    ↓
+정적 JS(charts.js + 페이지별 *.js)가 임베드된 데이터로 SVG 차트 렌더
+```
+
+- **갱신 방법**: Admin의 **Postings > Dashboard snapshots** 목록 상단 **대시보드 업데이트** 버튼을 누르면 현재 DB 전체를 집계해 새 스냅샷 한 건이 추가된다. 항상 가장 최근 스냅샷이 노출된다.
+- **차트 렌더링**: `web/static/web/js/charts.js`는 데이터 입력과 분리된 순수 SVG 빌더(`buildHistogram`, `buildScatter`, `buildStrip`, `buildBubble` 등)로, 입력 형태만 맞으면 실데이터/목업 어느 쪽이든 동일하게 렌더한다. 페이지별 `*.js`가 임베드 데이터를 각 빌더에 바인딩한다.
 
 ---
 
@@ -530,15 +558,21 @@ big = assign_big_category("서울-강남구")            # → "서울"
 - `conversion_dict`: 약 130개의 전체 주소 → 지역 코드 매핑 (정확 일치 → prefix 매칭 순으로 탐색)
 - `big_category_dict`: 지역 코드 → 5개 대분류 매핑
 
-### `stats/charts.py`
+### `postings/dataframe.py` · `postings/dashboard_stats.py`
 
-각 함수는 Django ORM으로 데이터를 조회하여 matplotlib 차트를 base64 PNG로 반환한다. 한글 폰트는 시스템에 설치된 `AppleGothic` → `NanumGothic` → `Malgun Gothic` 순으로 자동 선택된다.
+웹 대시보드와 Notion 통계가 공유하는 통계 계산 모듈.
+
+| 파일 | 역할 |
+|---|---|
+| `dataframe.py` | `build_dataframe()` — Django DB의 `JobPosting`을 통계 스크립트 호환 형식(한글 컬럼명, boolean → `Yes`/`No`)의 pandas DataFrame으로 변환. `run_statistics` 커맨드와 `dashboard_stats`가 함께 사용 |
+| `dashboard_stats.py` | `compute_dashboard_data(df)` — 위 DataFrame을 받아 웹 페이지별(home/fulltime/weekend/etc/onetime) 수치·데이터셋을 담은 JSON 직렬화 가능한 dict 반환. `DashboardSnapshot.data`로 저장됨. matplotlib/Notion 의존성이 없는 순수 계산 |
 
 ```python
-from stats.charts import chart_postings_by_region, get_summary_stats
+from postings.dataframe import build_dataframe
+from postings.dashboard_stats import compute_dashboard_data
 
-b64_png = chart_postings_by_region()   # <img src="data:image/png;base64,{b64_png}">
-stats   = get_summary_stats()          # dict: total, continuous_count, ...
+df = build_dataframe()
+data = compute_dashboard_data(df)   # {'home': {...}, 'fulltime': {...}, ...}
 ```
 
 ---
@@ -658,6 +692,16 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `total_errors` | 에러 발생 공고 수 |
 | `status` | `running` / `done` / `failed` |
 | `log_output` | 실행 중 누적되는 상세 로그 (Admin 실시간 로그 페이지에서 표시) |
+
+### DashboardSnapshot
+
+웹 대시보드용 통계 스냅샷. **최신 레코드가 현재 노출되는 대시보드 데이터**다. Admin의 **대시보드 업데이트** 버튼이 DB 전체를 집계해 한 레코드를 추가한다.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `created_at` | DateTimeField | 스냅샷 생성 시각 (`auto_now_add`) — 프론트의 "Last Update" |
+| `data` | JSONField | `compute_dashboard_data()` 결과 (페이지별 통계 dict) |
+| `posting_count` | IntegerField | 집계 대상 공고 수 (관리 목록 표시용) |
 
 ---
 

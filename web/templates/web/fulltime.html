@@ -1,0 +1,340 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>풀타임 근무 — 약사 시급 리포트</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+<style>
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+</style>
+</head>
+<body>
+<div style="min-height:100vh; width:100%; background:#F0F0EC; color:#2A302A; font-family:'Pretendard Variable',Pretendard,system-ui,sans-serif;">
+
+  <!-- nav -->
+  <header style="position:sticky; top:0; z-index:30; height:60px; background:rgba(251,251,248,0.9); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid #E5E5DE;">
+    <div style="max-width:880px; height:100%; margin:0 auto; padding:0 28px; display:flex; align-items:center; gap:14px;">
+      <a href="{% url 'web:home' %}" style="display:flex; align-items:center; gap:7px; padding:8px 13px; border-radius:9px; border:1px solid #E2E2DB; background:#fff; font-size:13.5px; font-weight:700; color:#454C43; white-space:nowrap; text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#454C43" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+        홈
+      </a>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:12px; font-weight:700; color:#2E6FB0; background:#DDEBF8; padding:5px 11px; border-radius:999px; white-space:nowrap;">풀타임 근무</span>
+        <span style="font-size:14px; font-weight:700; color:#9AA098; white-space:nowrap;">시급 리포트</span>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width:880px; margin:24px auto; background:#fff; border:1px solid #ECECE4; border-radius:18px; box-shadow:0 8px 30px rgba(30,40,30,0.06); padding:48px 56px 90px;">
+
+    <!-- title -->
+    <h1 style="margin:0 0 28px; font-size:30px; font-weight:800; letter-spacing:-1px; display:flex; align-items:center; gap:12px;">
+      <span style="font-size:32px; font-weight:800; color:#2E6FB0; letter-spacing:-1.5px; text-shadow:1px 1px 0 #DDEBF8;">풀타임 근무</span>
+      <span style="font-size:18px; font-weight:600; color:#9AA098;">시급·공고 분석</span>
+    </h1>
+
+    <!-- intro -->
+    <p style="margin:0 0 24px; font-size:15.5px; line-height:1.9; color:#3A4138;">
+      <b style="color:#2A302A;">팜리크루트</b>와 <b style="color:#2A302A;">약문약답</b>에서 웹크롤링을 통해 수집한 <b style="color:#2A302A;">전국의 약국 구인 공고</b>를 기반으로 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; font-weight:700; color:#B5532A;">풀타임 근무</span>에 대해 알아보겠습니다.
+    </p>
+
+    <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
+
+    <!-- callout: 평균 풀타임 시급 -->
+    <div style="position:relative; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:18px 26px; overflow:hidden; margin-bottom:26px;">
+      <div style="position:absolute; top:0; left:0; bottom:0; width:4px; background:#1E2420;"></div>
+      <div style="display:flex; align-items:center; gap:24px; flex-wrap:wrap;">
+        <span style="font-size:15.5px; font-weight:700; color:#454C43; white-space:nowrap;">전국 평균 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; color:#B5532A;">풀타임</span> 시급 :</span>
+        <span style="font-size:24px; font-weight:800; color:#2E6FB0; letter-spacing:-1px; white-space:nowrap;"><span id="ft-avg-wage"></span> <span style="font-size:14px;">만원</span></span>
+      </div>
+    </div>
+
+    <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
+
+    <!-- schedule -->
+    <p style="margin:0 0 16px; font-size:15.5px; line-height:1.9; color:#3A4138;">
+      약국마다 출퇴근 시간은 다를 수 있지만, 일반적으로 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; font-weight:700; color:#B5532A;">풀타임 근무</span>는 다음과 같은 스케줄로 일하는 경우가 많습니다.
+    </p>
+    <ul style="margin:0 0 26px; padding:0; list-style:none; display:flex; flex-direction:column; gap:12px;">
+      <li style="display:flex; align-items:center; gap:10px; font-size:15px;"><span style="width:5px; height:5px; border-radius:50%; background:#3A4138; flex:none;"></span><span style="background:#F4ECC8; border-radius:4px; padding:2px 8px; font-weight:800; color:#8A6D16; white-space:nowrap;">[ 주 50시간 ]</span><b style="color:#2A302A;">평일 5일</b> <span style="color:#8A908A;">(9시~18시)</span> <span style="color:#B0B6B0;">+</span> <b style="color:#2A302A;">토요일</b> <span style="color:#8A908A;">(9시~14시)</span></li>
+      <li style="display:flex; align-items:center; gap:10px; font-size:15px;"><span style="width:5px; height:5px; border-radius:50%; background:#3A4138; flex:none;"></span><span style="background:#F4ECC8; border-radius:4px; padding:2px 8px; font-weight:800; color:#8A6D16; white-space:nowrap;">[ 주 47시간 ]</span><b style="color:#2A302A;">평일 5일</b> <span style="color:#8A908A;">(9시~18시)</span> <span style="color:#B0B6B0;">+</span> <b style="color:#2A302A;">격주 토요일</b> <span style="color:#8A908A;">(0.5 · 9시~13시)</span></li>
+      <li style="display:flex; align-items:center; gap:10px; font-size:15px;"><span style="width:5px; height:5px; border-radius:50%; background:#3A4138; flex:none;"></span><span style="background:#F4ECC8; border-radius:4px; padding:2px 8px; font-weight:800; color:#8A6D16; white-space:nowrap;">[ 주 45시간 ]</span><b style="color:#2A302A;">평일 5일</b> <span style="color:#8A908A;">(9시~18시)</span></li>
+      <li style="display:flex; align-items:center; gap:10px; font-size:15px;"><span style="width:5px; height:5px; border-radius:50%; background:#3A4138; flex:none;"></span><span style="background:#F4ECC8; border-radius:4px; padding:2px 8px; font-weight:800; color:#8A6D16; white-space:nowrap;">[ 주 40시간 ]</span><b style="color:#2A302A;">평일 4일</b> <span style="color:#8A908A;">(9시~18시)</span> <span style="color:#B0B6B0;">+</span> <b style="color:#2A302A;">토요일</b> <span style="color:#8A908A;">(9시~13시)</span></li>
+      <li style="display:flex; align-items:center; gap:10px; font-size:15px;"><span style="width:5px; height:5px; border-radius:50%; background:#3A4138; flex:none;"></span><span style="background:#F4ECC8; border-radius:4px; padding:2px 8px; font-weight:800; color:#8A6D16; white-space:nowrap;">[ 주 36시간 ]</span><b style="color:#2A302A;">평일 4일</b> <span style="color:#8A908A;">(9시~18시)</span></li>
+    </ul>
+
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">
+      여기에서는 편의상 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; font-weight:700; color:#B5532A;">풀타임 근무</span>를 <span style="text-decoration:underline; text-underline-offset:3px;">주당(per week) 36시간 이상</span> 근무하는 경우로 정의하였습니다.
+    </p>
+    <p style="margin:0 0 22px; font-size:15.5px; line-height:1.9; color:#3A4138;">
+      수집한 <b style="color:#2A302A;">구인 공고</b>들 중에서 근무시간이 주 36시간 이상인 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; font-weight:700; color:#B5532A;">풀타임</span> 공고만 모아, <span style="text-decoration:underline; text-underline-offset:3px;">주당 근무 시간</span>에 따라 분류해보니 아래 그래프처럼 나타났습니다.
+    </p>
+
+    <!-- chart: histogram -->
+    <figure style="margin:0 0 22px;">
+      <figcaption style="text-align:center; font-size:15px; font-weight:700; color:#3A4138; margin-bottom:10px;">주당 근무 시간 Histogram &middot; 풀타임 근무</figcaption>
+      <div id="chart-hist" style="border:1px solid #ECECE4; border-radius:12px; padding:14px 16px; background:#fff;"></div>
+    </figure>
+
+    <p style="margin:0 0 12px; font-size:15.5px; line-height:1.9; color:#3A4138;">그래프가 높을수록 해당 근무 시간만큼 일해줄 것을 구인하는 공고가 많다는 뜻입니다.</p>
+    <p style="margin:0 0 26px; font-size:15.5px; line-height:1.9; color:#3A4138;"><span style="background:#FBE3D8; border-radius:3px; padding:0 4px; font-weight:700; color:#B5532A;">풀타임</span>은 보통 주당 <b style="color:#2A302A;">45~47시간</b> 정도 근무하는 형태가 가장 많은 것으로 보입니다.</p>
+
+    <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
+
+    <!-- callout: 풀타임 공고 수 -->
+    <div style="position:relative; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:18px 26px; overflow:hidden; margin-bottom:26px;">
+      <div style="position:absolute; top:0; left:0; bottom:0; width:4px; background:linear-gradient(#1BAA6B,#0F7A4C);"></div>
+      <div style="display:flex; align-items:center; gap:24px; flex-wrap:wrap;">
+        <span style="font-size:15.5px; font-weight:700; color:#454C43; white-space:nowrap;">현재까지 분석한 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; color:#B5532A;">풀타임</span> 공고 수 :</span>
+        <span style="font-size:24px; font-weight:800; color:#138255; letter-spacing:-1px; white-space:nowrap;"><span id="ft-count"></span> <span style="font-size:14px;">개</span></span>
+      </div>
+    </div>
+
+    <p style="margin:0 0 22px; font-size:15.5px; line-height:1.9; color:#3A4138;">이 공고들의 <span style="color:#E23B2E; font-weight:700;">시급</span>을 산출하여 다음과 같이 점도표(scatter plot)로 나타내 보았습니다.</p>
+
+    <!-- chart: scatter all -->
+    <figure style="margin:0 0 22px;">
+      <figcaption style="text-align:center; font-size:15px; font-weight:700; color:#3A4138; margin-bottom:10px;">풀타임 근무의 시급 scatter plot &middot; 전국</figcaption>
+      <div id="chart-scatter-all" style="border:1px solid #ECECE4; border-radius:12px; padding:14px 16px; background:#fff;"></div>
+    </figure>
+
+    <p style="margin:0 0 22px; font-size:15.5px; line-height:1.9; color:#3A4138;">근무 시간이 늘어날수록 <span style="color:#E23B2E; font-weight:700;">시급</span>이 점점 감소하는 경향이 있음을 알 수 있습니다.</p>
+
+    <!-- toggle: 활용법 1 -->
+    <div style="background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; overflow:hidden; margin-bottom:26px;">
+      <button data-toggle="use1" style="width:100%; display:flex; align-items:center; gap:10px; padding:15px 18px; text-align:left;">
+        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">&larr; 클릭!&nbsp;&nbsp;⭐ 나의 구직에 활용법 ⭐</span>
+      </button>
+      <div data-panel="use1" hidden>
+        <div style="padding:0 22px 22px 40px; font-size:14.5px; line-height:1.85; color:#5C635A;">
+          <div style="font-size:15px; font-weight:800; color:#3A4138; margin-bottom:14px;">⭐ 나의 구직에 활용법 ⭐</div>
+          <ol style="margin:0 0 16px; padding-left:20px; display:flex; flex-direction:column; gap:9px;">
+            <li>내가 현재 보고 있는 공고의 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">주당 근무 시간</b>과 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">시급</b>을 계산합니다.</li>
+            <li>아래 그래프에서 점을 찍어 다른 공고들과 비교해 봅니다.</li>
+          </ol>
+          <p style="margin:0 0 18px;">예를 들어, 주당 근무시간이 <b style="color:#2A302A;">51시간</b>, 시급이 <b style="color:#2A302A;">2.7만원</b>인 경우, 아래 그래프에서 <b style="color:#2438D8;">파란색 별표</b>와 같이 점이 찍힙니다. <b style="color:#E23B2E;">빨간색 선</b>보다 위에 존재하므로 전국적인 평균보다 높은 수준의 시급이라고 볼 수 있습니다.</p>
+          <figure style="margin:0;">
+            <figcaption style="text-align:center; font-size:14px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 전국</figcaption>
+            <div id="chart-my-all" style="border:1px solid #ECECE4; border-radius:12px; padding:12px 14px; background:#fff;"></div>
+          </figure>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin:0 0 22px; font-size:15.5px; line-height:1.9; color:#3A4138;">이 그래프를 <span style="color:#2F6FE0; font-weight:700;">월급</span>으로 환산해보면 아래와 같습니다.</p>
+
+    <!-- chart: monthly -->
+    <figure style="margin:0 0 22px;">
+      <figcaption style="text-align:center; font-size:15px; font-weight:700; color:#3A4138; margin-bottom:10px;">풀타임 근무 &middot; 주당 근무시간에 따른 월급</figcaption>
+      <div id="chart-monthly" style="border:1px solid #ECECE4; border-radius:12px; padding:14px 16px; background:#fff;"></div>
+    </figure>
+
+    <p style="margin:0 0 26px; font-size:15.5px; line-height:1.9; color:#3A4138;">파란색 regression line은 <span style="text-decoration:underline; text-underline-offset:3px;">전국의 평균적인</span> <span style="color:#2F6FE0; font-weight:700;">월급</span>(세후) 수준으로 해석해 볼 수 있습니다.</p>
+
+    <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
+
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;"><span style="background:#E7E0F5; border-radius:3px; padding:0 4px; font-weight:700; color:#5E43A4;">지역별</span>로 색깔을 다르게 칠해보면 어떨까요?</p>
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">크게 <b style="color:#2A302A; text-decoration:underline; text-underline-offset:3px;">5개의 지역</b>으로 구분하여 색깔을 칠했습니다. ( 서울 / 인천 / 경기중부 / 경기외곽 / 그 외 지방 )</p>
+
+    <!-- toggle: 경기 구분 -->
+    <div style="margin-bottom:20px;">
+      <button data-toggle="gyeonggi" style="display:flex; align-items:center; gap:10px; padding:8px 4px; text-align:left;">
+        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">경기 중부 / 경기 외곽 구분</span>
+      </button>
+      <div data-panel="gyeonggi" hidden>
+        <div style="margin:2px 0 0 28px; padding:16px 20px; background:#F6F6F3; border:1px solid #EAEAE3; border-radius:10px; font-size:14.5px; line-height:1.8; color:#5C635A;">
+          <div style="font-weight:800; color:#3A4138; margin-bottom:4px;">경기 중부</div>
+          <div style="margin-bottom:16px;">: 고양, 양주, 의정부, 남양주, 구리, 하남, 경기도광주, 성남, 과천, 의왕, 안양, 군포, 광명, 시흥, 부천, 김포</div>
+          <div style="font-weight:800; color:#3A4138; margin-bottom:4px;">경기 외곽</div>
+          <div>: 파주, 동두천, 연천, 포천, 가평, 양평, 여주, 이천, 안성, 용인, 평택, 오산, 화성, 수원, 안산</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- chart: regional scatter -->
+    <figure style="margin:0 0 22px;">
+      <figcaption style="text-align:center; font-size:15px; font-weight:700; color:#3A4138; margin-bottom:10px;">풀타임 근무의 시급 scatter plot &middot; 지역별</figcaption>
+      <div id="chart-regional" style="border:1px solid #ECECE4; border-radius:12px; padding:14px 16px; background:#fff;"></div>
+    </figure>
+
+    <p style="margin:0 0 26px; font-size:15.5px; line-height:1.9; color:#3A4138;">대략적으로 <b style="color:#B0203A;">서울</b>의 시급이 아래쪽에, <b style="color:#2E3E8F;">지방</b>의 시급이 위쪽에 형성되어 있는 것처럼 보이긴 하지만, 극명하게 구분되는 것은 아니고 뒤섞여서 나타나고 있습니다.</p>
+
+    <p style="margin:0 0 18px; font-size:15.5px; line-height:1.9; color:#3A4138;">좀 더 정확한 판단을 위해 <span style="background:#FBE3D8; border-radius:3px; padding:0 4px; font-weight:700; color:#B5532A;">풀타임 근무</span> 시급의 <span style="text-decoration:underline; text-underline-offset:3px;">지역별 평균값</span>을 구해보면 다음과 같습니다.</p>
+
+    <!-- table + dist chart -->
+    <div style="display:grid; grid-template-columns:230px 1fr; gap:28px; align-items:start; margin-bottom:24px;">
+      <div>
+        <div style="font-size:15px; font-weight:800; margin-bottom:10px;">풀타임 시급 평균값</div>
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+          <tbody id="table-means"></tbody>
+        </table>
+      </div>
+      <figure style="margin:0;">
+        <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">지역별 풀타임 근무 시급 분포 그래프</figcaption>
+        <div id="chart-dist" style="border:1px solid #ECECE4; border-radius:12px; padding:10px 12px; background:#fff;"></div>
+      </figure>
+    </div>
+
+    <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:18px;">
+      <span style="width:6px; height:6px; border-radius:2px; background:#3A4138; flex:none; margin-top:8px;"></span>
+      <p style="margin:0; font-size:15.5px; line-height:1.9; color:#3A4138;">오른쪽 시급 분포 그래프를 보면, <b style="color:#B0203A;">서울</b>보다 <b style="color:#2E3E8F;">지방</b>에서 평균 시급과 IQR이 더 높게 형성되어 있는 것을 볼 수 있습니다.</p>
+    </div>
+
+    <!-- toggle: IQR -->
+    <div style="margin-bottom:26px;">
+      <button data-toggle="iqr" style="display:flex; align-items:center; gap:10px; padding:8px 4px; text-align:left;">
+        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">IQR (interquartile range)</span>
+      </button>
+      <div data-panel="iqr" hidden>
+        <div style="margin:2px 0 0 28px; padding:14px 18px; background:#F6F6F3; border:1px solid #EAEAE3; border-radius:10px; font-size:14.5px; line-height:1.85; color:#5C635A;">
+          IQR은 데이터를 크기순으로 정렬했을 때 <b style="color:#8A6D16;">가운데 50% 구간(25%~75%)</b>을 의미합니다. 노란 박스가 클수록 해당 지역의 시급 편차가 크다는 뜻입니다.
+        </div>
+      </div>
+    </div>
+
+    <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
+
+    <!-- toggle: 활용법 2 -->
+    <div style="background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; overflow:hidden; margin-bottom:26px;">
+      <button data-toggle="use2" style="width:100%; display:flex; align-items:center; gap:10px; padding:15px 18px; text-align:left;">
+        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">&larr; 클릭!&nbsp;&nbsp;⭐ 나의 구직에 활용법 ⭐</span>
+      </button>
+      <div data-panel="use2" hidden>
+        <div style="padding:0 22px 22px 40px; font-size:14.5px; line-height:1.85; color:#5C635A;">
+          <div style="font-size:15px; font-weight:800; color:#3A4138; margin-bottom:14px;">⭐ 나의 구직에 활용법 ⭐</div>
+          <ol style="margin:0 0 16px; padding-left:20px; display:flex; flex-direction:column; gap:9px;">
+            <li>내가 현재 보고 있는 공고의 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">주당 근무 시간</b>과 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">시급</b>을 계산합니다.</li>
+            <li>아래 <b style="color:#3A4138;">지역 카테고리</b> 중 내 공고에 해당하는 지역 그래프에서 점을 찍어 다른 공고들과 비교해 봅니다.</li>
+          </ol>
+          <p style="margin:0 0 18px;">예를 들어, 주당 근무시간이 <b style="color:#2A302A;">51시간</b>, 시급이 <b style="color:#2A302A;">2.7만원</b>인 경우, 아래 그래프에서 <b style="color:#2438D8;">파란색 별표</b>와 같이 점이 찍힙니다. <b style="color:#E23B2E;">빨간색 선</b>보다 위에 존재하므로 <b style="color:#2E6FB0;">해당 지역</b> 평균보다 높은 수준의 시급이라고 볼 수 있습니다.</p>
+
+          <div style="display:flex; flex-direction:column; gap:9px;">
+            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
+              <button data-toggle="rseoul" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
+                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+                <span style="font-size:14px; font-weight:700; color:#454C43;">서울</span>
+              </button>
+              <div data-panel="rseoul" hidden>
+                <figure style="margin:0; padding:2px 14px 16px;">
+                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 서울</figcaption>
+                  <div id="chart-my-seoul" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+                </figure>
+              </div>
+            </div>
+            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
+              <button data-toggle="rincheon" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
+                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+                <span style="font-size:14px; font-weight:700; color:#454C43;">인천</span>
+              </button>
+              <div data-panel="rincheon" hidden>
+                <figure style="margin:0; padding:2px 14px 16px;">
+                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 인천</figcaption>
+                  <div id="chart-my-incheon" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+                </figure>
+              </div>
+            </div>
+            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
+              <button data-toggle="rgjung" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
+                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+                <span style="font-size:14px; font-weight:700; color:#454C43;">경기 중부</span>
+              </button>
+              <div data-panel="rgjung" hidden>
+                <figure style="margin:0; padding:2px 14px 16px;">
+                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 경기 중부</figcaption>
+                  <div id="chart-my-gjung" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+                </figure>
+              </div>
+            </div>
+            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
+              <button data-toggle="rgouter" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
+                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+                <span style="font-size:14px; font-weight:700; color:#454C43;">경기 외곽</span>
+              </button>
+              <div data-panel="rgouter" hidden>
+                <figure style="margin:0; padding:2px 14px 16px;">
+                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 경기 외곽</figcaption>
+                  <div id="chart-my-gouter" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+                </figure>
+              </div>
+            </div>
+            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
+              <button data-toggle="rjibang" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
+                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+                <span style="font-size:14px; font-weight:700; color:#454C43;">지방</span>
+              </button>
+              <div data-panel="rjibang" hidden>
+                <figure style="margin:0; padding:2px 14px 16px;">
+                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 지방</figcaption>
+                  <div id="chart-my-jibang" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+                </figure>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 퇴직금 -->
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">만약 <b style="color:#2A302A; text-decoration:underline; text-underline-offset:3px;">1년 이상 같은 약국에서</b> 일할 예정이라면, <span style="background:#E7E0F5; border-radius:3px; padding:0 4px; font-weight:700; color:#5E43A4;">퇴직금</span>은 어떻게 반영할 수 있을까요?</p>
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">사업장의 규모와 상관없이 모든 사업장에서는 <b style="color:#2A302A;">근속연수 1년 이상</b> 및 <b style="color:#2A302A;">1주당 15시간 이상</b> 근무한 근로자에게 <span style="background:#E7E0F5; border-radius:3px; padding:0 4px; font-weight:700; color:#5E43A4;">퇴직금</span>을 지급해야 합니다. 퇴직금의 액수는 1일 평균임금 &times; 30일 &times; (재직일수 &divide; 365) 으로 계산됩니다.</p>
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">간단하게 계산하면, <span style="background:#F4ECC8; border-radius:3px; padding:0 4px; font-weight:700; color:#8A6D16;">재직기간 1년당 1개월분의 급여만큼</span>이 퇴직금으로 나옵니다.</p>
+    <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">따라서 주당 15시간 이상 &amp; 1년 이상 일할 계획이라면 구직을 할 때 퇴직금 또한 고려해야 합니다.</p>
+    <p style="margin:0 0 24px; font-size:14.5px; line-height:1.85; color:#7A8077; font-style:italic;">( 파트 근무가 표면적으로 시급이 높아보이지만, 퇴직금까지 고려했을 때 풀타임 근무가 더 나은 선택이 되는 경우도 있습니다. )</p>
+
+    <p style="margin:0 0 18px; font-size:15.5px; line-height:1.9; color:#3A4138;">1년 이상 근무한다는 가정하에 퇴직금 금액만큼을 <span style="text-decoration:underline; text-underline-offset:3px;">시급으로 포함시켜서</span> 시급을 다시 계산해보면 아래와 같습니다.</p>
+
+    <div style="display:grid; grid-template-columns:230px 1fr; gap:28px; align-items:start; margin-bottom:26px;">
+      <div>
+        <div style="font-size:15px; font-weight:800; margin-bottom:10px;">풀타임 시급 평균값 <span style="color:#5E43A4;">&ndash; 퇴직금 고려</span></div>
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+          <tbody id="table-means-sev"></tbody>
+        </table>
+      </div>
+      <figure style="margin:0;">
+        <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">지역별 풀타임 근무 시급 분포 &middot; 퇴직금 고려</figcaption>
+        <div id="chart-dist-sev" style="border:1px solid #ECECE4; border-radius:12px; padding:10px 12px; background:#fff;"></div>
+      </figure>
+    </div>
+
+    <!-- toggle: 참고 -->
+    <div style="background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; overflow:hidden;">
+      <button data-toggle="ref" style="width:100%; display:flex; align-items:center; gap:10px; padding:15px 18px; text-align:left;">
+        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">참고 ) &ldquo;주 5시간 일할 때와 주 50시간 일할 때의 <span style="color:#E23B2E;">시급</span>이 같을까?&rdquo;</span>
+      </button>
+      <div data-panel="ref" hidden>
+        <div style="padding:0 22px 22px 40px; font-size:14.5px; line-height:1.85; color:#5C635A;">
+          <p style="margin:0 0 18px; font-size:15px;">&rarr; 결론은 주당 일하는 시간이 <b style="color:#2A302A; text-decoration:underline; text-underline-offset:3px;">짧을수록 시급이 더 좋습니다.</b></p>
+          <p style="margin:0 0 14px;"><b style="color:#2A302A;">전국의 약국 구인 공고</b>들을 <span style="text-decoration:underline; text-underline-offset:3px;">주당(per week) 근무 시간</span>에 따라 분류해보니 아래 그래프처럼 나타났습니다.</p>
+          <figure style="margin:0 0 18px;">
+            <figcaption style="text-align:center; font-size:14px; font-weight:700; color:#3A4138; margin-bottom:8px;">주당 근무 시간 Histogram</figcaption>
+            <div id="chart-full-hist" style="border:1px solid #ECECE4; border-radius:12px; padding:12px 14px; background:#fff;"></div>
+          </figure>
+          <p style="margin:0 0 18px;">그래프가 높을수록 해당 근무 시간만큼 일해줄 것을 구인하는 공고가 많다는 뜻입니다.</p>
+          <p style="margin:0 0 14px;">이 공고들의 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">시급</b>을 계산하여 아래와 같이 점도표(scatter plot)로 나타내 보았습니다.</p>
+          <figure style="margin:0 0 18px;">
+            <figcaption style="text-align:center; font-size:14px; font-weight:700; color:#3A4138; margin-bottom:8px;">근무 시간과 시급의 관계 with Regression line &middot; 전국</figcaption>
+            <div id="chart-full-scatter" style="border:1px solid #ECECE4; border-radius:12px; padding:12px 14px; background:#fff;"></div>
+          </figure>
+          <p style="margin:0 0 12px;">그래프를 보면, 주 5시간 일하는 파트타임의 평균 시급은 <b style="color:#2A302A;">3.5만원</b> 정도지만, 주 50시간 일하는 풀타임 근무는 평균 시급이 <b style="color:#2A302A;">2.5만원</b> 수준까지 내려오게 됩니다.</p>
+          <p style="margin:0;">긴 시간 근무할수록 약국장 입장에서 시급을 높게 주기 부담스러워지기 때문이겠죠.</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+{{ dashboard|json_script:"dashboard-data" }}
+<script src="{% static 'web/js/charts.js' %}"></script>
+<script src="{% static 'web/js/ui.js' %}"></script>
+<script src="{% static 'web/js/fulltime.js' %}"></script>
+</body>
+</html>

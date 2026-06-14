@@ -1,21 +1,23 @@
-{% load static %}<!DOCTYPE html>
-<html lang="ko">
+<!DOCTYPE html>
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>약사 시급 리포트</title>
-<link rel="preconnect" href="https://cdn.jsdelivr.net" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
-<style>
-  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
-  body { margin: 0; }
-  button { font-family: inherit; cursor: pointer; border: none; background: none; }
-  a.gallery-card { transition: transform .15s, box-shadow .15s; }
-  a.gallery-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(30,40,30,0.09) !important; }
-</style>
+<script src="./support.js"></script>
 </head>
 <body>
-<div style="min-height:100vh; width:100%; background:#FBFBF8; color:#1E2420; font-family:'Pretendard Variable',Pretendard,system-ui,sans-serif;">
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+  <style>
+    * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+    body { margin: 0; }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  </style>
+</helmet>
+
+<div data-screen-label="약사 시급 리포트 웹" style="min-height:100vh; width:100%; background:#FBFBF8; color:#1E2420; font-family:'Pretendard Variable',Pretendard,system-ui,sans-serif;">
 
   <!-- ===== TOP NAV ===== -->
   <header style="position:sticky; top:0; z-index:30; height:62px; background:rgba(251,251,248,0.88); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid #EDEDE7;">
@@ -28,7 +30,7 @@
           <span style="font-size:16px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">약사 시급 리포트</span>
         </div>
         <nav style="display:flex; align-items:center; gap:4px;">
-          <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
+          <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
           <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">시급 비교</a>
           <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">공고 분석</a>
           <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">방법론</a>
@@ -55,39 +57,49 @@
       <div style="position:absolute; top:0; left:0; bottom:0; width:5px; background:linear-gradient(#1BAA6B,#0F7A4C);"></div>
       <div style="display:flex; align-items:center; gap:24px; flex-wrap:wrap;">
         <span style="font-size:16px; font-weight:700; color:#454C43; white-space:nowrap;">현재까지 분석한 <b style="color:#138255;">공고 수</b> :</span>
-        <span style="font-size:34px; font-weight:800; letter-spacing:-1.5px; color:#138255; white-space:nowrap;"><span id="total-postings"></span><span style="font-size:17px; margin-left:4px;">개</span></span>
+        <span style="font-size:34px; font-weight:800; letter-spacing:-1.5px; color:#138255; white-space:nowrap;">3,444<span style="font-size:17px; margin-left:4px;">개</span></span>
         <span style="margin-left:auto; font-size:12px; font-weight:700; color:#0F7A4C; background:#E4F4EB; padding:6px 12px; border-radius:999px;">세후 기준 · 매주 업데이트</span>
       </div>
     </div>
 
     <!-- toggles -->
     <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:34px;">
-      <button data-toggle="sub" style="display:flex; align-items:center; gap:10px; padding:8px 6px; text-align:left; width:fit-content; white-space:nowrap;">
-        <svg data-caret width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+      <button onClick="{{ toggleSub }}" style="display:flex; align-items:center; gap:10px; padding:8px 6px; text-align:left; width:fit-content; white-space:nowrap;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:{{ caretSub }}; transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
         <span style="font-size:15px; font-weight:800;">세부 분류</span>
         <span style="font-size:15px; font-weight:500; color:#9AA098;">더보기</span>
       </button>
-      <div data-panel="sub" hidden>
+      <sc-if value="{{ subOpen }}" hint-placeholder-val="{{ false }}">
         <div style="margin:2px 0 6px 28px; padding:16px 20px; background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px 28px; max-width:760px;">
           <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#225E97;">풀타임</b> · 주 5일 이상 정규 상근 근무</div>
           <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#A6711A;">주말 파트</b> · 토·일 중심 파트타임 근무</div>
           <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#2F7E48;">기타 파트</b> · 평일 특정 요일·시간대 파트</div>
           <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#5E43A4;">일회성 단기</b> · 1회·초단기 대체 근무</div>
         </div>
-      </div>
+      </sc-if>
 
-      <button data-toggle="graph" style="display:flex; align-items:center; gap:10px; padding:8px 6px; text-align:left; width:fit-content; white-space:nowrap;">
-        <svg data-caret width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
+      <button onClick="{{ toggleGraph }}" style="display:flex; align-items:center; gap:10px; padding:8px 6px; text-align:left; width:fit-content; white-space:nowrap;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:{{ caretGraph }}; transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-6 4 3 6-8"/></svg>
         <span style="font-size:15px; font-weight:800;">그래프</span>
         <span style="font-size:15px; font-weight:500; color:#9AA098;">더보기</span>
       </button>
-      <div data-panel="graph" hidden>
+      <sc-if value="{{ graphOpen }}" hint-placeholder-val="{{ false }}">
         <div style="margin:2px 0 6px 28px; padding:20px 24px; background:#fff; border:1px solid #ECECE4; border-radius:12px; max-width:620px;">
           <div style="font-size:12px; font-weight:600; color:#9AA098; margin-bottom:16px;">근무형태별 평균 시급 (만원)</div>
-          <div id="cat-bars" style="display:flex; flex-direction:column; gap:13px;"></div>
+          <div style="display:flex; flex-direction:column; gap:13px;">
+            <sc-for list="{{ catBars }}" as="c" hint-placeholder-count="5">
+              <div style="display:flex; align-items:center; gap:14px;">
+                <span style="width:74px; flex:none; font-size:13px; font-weight:700; color:#5C635A; letter-spacing:-0.3px;">{{ c.name }}</span>
+                <div style="flex:1; height:16px; background:#F1F1EE; border-radius:8px; overflow:hidden;">
+                  <div style="height:100%; width:{{ c.w }}; background:{{ c.color }}; border-radius:8px; transition:width .5s ease;"></div>
+                </div>
+                <span style="width:44px; flex:none; text-align:right; font-size:13.5px; font-weight:800; color:#3A4138;">{{ c.vStr }}</span>
+              </div>
+            </sc-for>
+          </div>
         </div>
-      </div>
+      </sc-if>
     </div>
 
     <!-- ===== TWO COLUMN ===== -->
@@ -100,7 +112,7 @@
           <div style="position:absolute; top:0; left:0; bottom:0; width:4px; background:#1E2420;"></div>
           <div style="display:flex; align-items:center; gap:18px;">
             <span style="font-size:14.5px; font-weight:800; color:#2A302A;">Last Update :</span>
-            <span id="last-update" style="font-size:14.5px; font-weight:600; color:#5C635A;"></span>
+            <span style="font-size:14.5px; font-weight:600; color:#5C635A;">2026-03-25</span>
           </div>
         </div>
 
@@ -111,7 +123,7 @@
             <span style="width:6px; height:6px; border-radius:50%; background:#56564F; flex:none;"></span>
             <div style="flex:1; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:12px; background:#F2F2EF; border:1px solid #E7E7E1;">
               <span style="font-size:14.5px; font-weight:700; color:#4C534A;">전국 평균 시급</span>
-              <span style="font-size:18px; font-weight:800; color:#56564F; letter-spacing:-0.5px;"><span data-cat-avg="전국 평균"></span> <span style="font-size:12px; font-weight:700;">만원</span></span>
+              <span style="font-size:18px; font-weight:800; color:#56564F; letter-spacing:-0.5px;">3.16 <span style="font-size:12px; font-weight:700;">만원</span></span>
             </div>
           </div>
 
@@ -119,7 +131,7 @@
             <span style="width:6px; height:6px; border-radius:50%; background:#2E6FB0; flex:none;"></span>
             <div style="flex:1; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:12px; background:#DDEBF8; border:1px solid #C7DDF1;">
               <span style="font-size:14.5px; font-weight:700; color:#225E97;">전국 평균 <b style="font-weight:800;">“풀타임”</b> 시급</span>
-              <span style="font-size:18px; font-weight:800; color:#2E6FB0; letter-spacing:-0.5px;"><span data-cat-avg="풀타임"></span> <span style="font-size:12px; font-weight:700;">만원</span></span>
+              <span style="font-size:18px; font-weight:800; color:#2E6FB0; letter-spacing:-0.5px;">2.67 <span style="font-size:12px; font-weight:700;">만원</span></span>
             </div>
           </div>
 
@@ -127,7 +139,7 @@
             <span style="width:6px; height:6px; border-radius:50%; background:#C5891B; flex:none;"></span>
             <div style="flex:1; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:12px; background:#FBEFD2; border:1px solid #F0DCAC;">
               <span style="font-size:14.5px; font-weight:700; color:#A6711A;">전국 평균 <b style="font-weight:800;">“주말 파트”</b> 시급</span>
-              <span style="font-size:18px; font-weight:800; color:#C5891B; letter-spacing:-0.5px;"><span data-cat-avg="주말 파트"></span> <span style="font-size:12px; font-weight:700;">만원</span></span>
+              <span style="font-size:18px; font-weight:800; color:#C5891B; letter-spacing:-0.5px;">3.66 <span style="font-size:12px; font-weight:700;">만원</span></span>
             </div>
           </div>
 
@@ -135,7 +147,7 @@
             <span style="width:6px; height:6px; border-radius:50%; background:#3C9A5C; flex:none;"></span>
             <div style="flex:1; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:12px; background:#DEF0E4; border:1px solid #C5E4CF;">
               <span style="font-size:14.5px; font-weight:700; color:#2F7E48;">전국 평균 <b style="font-weight:800;">“기타 파트”</b> 시급</span>
-              <span style="font-size:18px; font-weight:800; color:#3C9A5C; letter-spacing:-0.5px;"><span data-cat-avg="기타 파트"></span> <span style="font-size:12px; font-weight:700;">만원</span></span>
+              <span style="font-size:18px; font-weight:800; color:#3C9A5C; letter-spacing:-0.5px;">3.24 <span style="font-size:12px; font-weight:700;">만원</span></span>
             </div>
           </div>
 
@@ -143,7 +155,7 @@
             <span style="width:6px; height:6px; border-radius:50%; background:#7B5BC4; flex:none;"></span>
             <div style="flex:1; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-radius:12px; background:#ECE4F8; border:1px solid #DCD0F0;">
               <span style="font-size:14.5px; font-weight:700; color:#5E43A4;">전국 평균 <b style="font-weight:800;">“일회성 단기”</b> 시급</span>
-              <span style="font-size:18px; font-weight:800; color:#7B5BC4; letter-spacing:-0.5px;"><span data-cat-avg="일회성 단기"></span> <span style="font-size:12px; font-weight:700;">만원</span></span>
+              <span style="font-size:18px; font-weight:800; color:#7B5BC4; letter-spacing:-0.5px;">3.44 <span style="font-size:12px; font-weight:700;">만원</span></span>
             </div>
           </div>
         </div>
@@ -154,17 +166,31 @@
           <h3 style="margin:0; font-size:16px; font-weight:800; letter-spacing:-0.5px;">지역별 평균 시급 비교</h3>
         </div>
 
-        <div id="region-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;"></div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+          <sc-for list="{{ regions }}" as="r" hint-placeholder-count="10">
+            <button onClick="{{ r.onChip }}" style="padding:7px 14px; border-radius:999px; font-size:13px; font-weight:700; letter-spacing:-0.3px; background:{{ r.chipBg }}; color:{{ r.chipColor }}; border:1px solid {{ r.chipBorder }}; transition:all .18s;">{{ r.name }}</button>
+          </sc-for>
+        </div>
 
         <div style="background:#fff; border:1px solid #ECECE4; border-radius:14px; padding:18px 20px; box-shadow:0 4px 14px rgba(30,40,30,0.04);">
-          <div id="region-bars" style="display:flex; flex-direction:column; gap:12px;"></div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <sc-for list="{{ regions }}" as="r" hint-placeholder-count="10">
+              <div style="display:flex; align-items:center; gap:14px;">
+                <span style="width:34px; flex:none; font-size:13.5px; font-weight:700; letter-spacing:-0.5px; color:{{ r.nameColor }};">{{ r.name }}</span>
+                <div style="flex:1; height:20px; background:#F1F2EF; border-radius:7px; overflow:hidden;">
+                  <div style="height:100%; width:{{ r.barW }}; background:{{ r.barColor }}; border-radius:7px; transition:all .4s ease;"></div>
+                </div>
+                <span style="width:58px; flex:none; text-align:right; font-size:13.5px; font-weight:800; color:{{ r.valColor }};">{{ r.vStr }}<span style="font-size:10px; font-weight:600; margin-left:2px;">만원</span></span>
+              </div>
+            </sc-for>
+          </div>
           <div style="margin-top:14px; padding-top:14px; border-top:1px solid #F0F0EA; display:flex; align-items:center; justify-content:space-between;">
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="width:9px; height:9px; border-radius:50%; background:#169A60;"></span>
-              <span id="sel-name" style="font-size:13.5px; font-weight:800;"></span>
-              <span id="sel-rank" style="font-size:12.5px; font-weight:600; color:#9AA098;"></span>
+              <span style="font-size:13.5px; font-weight:800;">{{ sel.name }}</span>
+              <span style="font-size:12.5px; font-weight:600; color:#9AA098;">{{ sel.rankStr }}</span>
             </div>
-            <span style="font-size:15px; font-weight:800; color:#138255;"><span id="sel-value"></span><span style="font-size:11px; font-weight:700; margin-left:2px;">만원</span></span>
+            <span style="font-size:15px; font-weight:800; color:#138255;">{{ sel.vStr }}<span style="font-size:11px; font-weight:700; margin-left:2px;">만원</span></span>
           </div>
         </div>
       </div>
@@ -182,7 +208,7 @@
         <div style="display:flex; flex-direction:column; gap:16px;">
 
           <!-- 풀타임 -->
-          <a href="{% url 'web:fulltime' %}" class="gallery-card" style="display:block; text-align:left; text-decoration:none; color:inherit; border-radius:16px; overflow:hidden; border:1px solid #C7DDF1; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05);">
+          <button onClick="{{ goFulltime }}" style="display:block; text-align:left; border-radius:16px; overflow:hidden; border:1px solid #C7DDF1; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05); transition:transform .15s, box-shadow .15s;" style-hover="transform:translateY(-2px); box-shadow:0 10px 24px rgba(30,40,30,0.09)">
             <div style="background:#DDEBF8; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#2E6FB0; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(46,111,176,0.18);">풀타임 근무</span>
             </div>
@@ -190,10 +216,10 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E6FB0" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
               <span style="font-size:14px; font-weight:600; color:#46506E;">풀타임 근무</span>
             </div>
-          </a>
+          </button>
 
           <!-- 주말파트 -->
-          <a href="{% url 'web:weekend' %}" class="gallery-card" style="display:block; text-align:left; text-decoration:none; color:inherit; border-radius:16px; overflow:hidden; border:1px solid #F0DCAC; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05);">
+          <button style="display:block; text-align:left; border-radius:16px; overflow:hidden; border:1px solid #F0DCAC; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05); transition:transform .15s, box-shadow .15s;" style-hover="transform:translateY(-2px); box-shadow:0 10px 24px rgba(30,40,30,0.09)">
             <div style="background:#FBEFD2; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#C5891B; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(197,137,27,0.2);">주말파트 근무</span>
             </div>
@@ -201,10 +227,10 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
               <span style="font-size:14px; font-weight:600; color:#7C5A12;">주말(토, 일) 파트 근무</span>
             </div>
-          </a>
+          </button>
 
           <!-- 기타파트 -->
-          <a href="{% url 'web:etc' %}" class="gallery-card" style="display:block; text-align:left; text-decoration:none; color:inherit; border-radius:16px; overflow:hidden; border:1px solid #C5E4CF; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05);">
+          <button style="display:block; text-align:left; border-radius:16px; overflow:hidden; border:1px solid #C5E4CF; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05); transition:transform .15s, box-shadow .15s;" style-hover="transform:translateY(-2px); box-shadow:0 10px 24px rgba(30,40,30,0.09)">
             <div style="background:#DEF0E4; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#3C9A5C; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(60,154,92,0.2);">기타파트 근무</span>
             </div>
@@ -212,10 +238,10 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3C9A5C" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
               <span style="font-size:14px; font-weight:600; color:#2C6B41;">그 외 기타 파트 근무</span>
             </div>
-          </a>
+          </button>
 
           <!-- 단기/1회 -->
-          <a href="{% url 'web:onetime' %}" class="gallery-card" style="display:block; text-align:left; text-decoration:none; color:inherit; border-radius:16px; overflow:hidden; border:1px solid #DCD0F0; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05);">
+          <button style="display:block; text-align:left; border-radius:16px; overflow:hidden; border:1px solid #DCD0F0; background:#fff; box-shadow:0 5px 16px rgba(30,40,30,0.05); transition:transform .15s, box-shadow .15s;" style-hover="transform:translateY(-2px); box-shadow:0 10px 24px rgba(30,40,30,0.09)">
             <div style="background:#ECE4F8; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#7B5BC4; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(123,91,196,0.2);">단기/1회 근무</span>
             </div>
@@ -223,7 +249,7 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7B5BC4" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
               <span style="font-size:14px; font-weight:600; color:#574089;">일회성·단기 근무</span>
             </div>
-          </a>
+          </button>
 
         </div>
       </div>
@@ -231,8 +257,70 @@
     </div>
   </main>
 </div>
-{{ dashboard|json_script:"dashboard-data" }}
-<script src="{% static 'web/js/ui.js' %}"></script>
-<script src="{% static 'web/js/home.js' %}"></script>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { sub: false, graph: false, region: '서울' };
+
+  regionData = [
+    { name: '서울', v: 3.13 }, { name: '경기', v: 3.20 }, { name: '인천', v: 3.18 },
+    { name: '부산', v: 3.30 }, { name: '대구', v: 3.28 }, { name: '대전', v: 3.35 },
+    { name: '광주', v: 3.40 }, { name: '강원', v: 3.55 }, { name: '경북', v: 3.45 },
+    { name: '제주', v: 3.62 },
+  ];
+
+  renderVals() {
+    const { sub, graph, region } = this.state;
+    const scale = v => Math.max(8, Math.min(100, ((v - 2.8) / (3.8 - 2.8)) * 100)) + '%';
+    const sorted = [...this.regionData].sort((a, b) => b.v - a.v);
+
+    const regions = this.regionData.map(r => {
+      const selected = r.name === region;
+      return {
+        name: r.name,
+        vStr: r.v.toFixed(2),
+        barW: scale(r.v),
+        barColor: selected ? '#169A60' : '#CDD8D0',
+        valColor: selected ? '#0F7A4C' : '#8A938B',
+        nameColor: selected ? '#1E2420' : '#828A80',
+        chipBg: selected ? '#169A60' : '#FFFFFF',
+        chipColor: selected ? '#FFFFFF' : '#56605A',
+        chipBorder: selected ? '#169A60' : '#E2E2DC',
+        onChip: () => this.setState({ region: r.name }),
+      };
+    });
+
+    const selObj = this.regionData.find(r => r.name === region);
+    const rank = sorted.findIndex(r => r.name === region) + 1;
+    const sel = {
+      name: region,
+      vStr: selObj.v.toFixed(2),
+      rankStr: '전국 ' + rank + '위 / ' + this.regionData.length + '개 지역',
+    };
+
+    const catScale = v => Math.max(8, Math.min(100, ((v - 2.3) / (3.8 - 2.3)) * 100)) + '%';
+    const catBars = [
+      { name: '전국 평균', v: 3.16, color: '#A0A096' },
+      { name: '풀타임', v: 2.67, color: '#2E6FB0' },
+      { name: '주말 파트', v: 3.66, color: '#C5891B' },
+      { name: '기타 파트', v: 3.24, color: '#3C9A5C' },
+      { name: '일회성 단기', v: 3.44, color: '#7B5BC4' },
+    ].map(c => ({ name: c.name, color: c.color, vStr: c.v.toFixed(2), w: catScale(c.v) }));
+
+    return {
+      subOpen: sub,
+      graphOpen: graph,
+      caretSub: sub ? 'rotate(90deg)' : 'rotate(0deg)',
+      caretGraph: graph ? 'rotate(90deg)' : 'rotate(0deg)',
+      toggleSub: () => this.setState(s => ({ sub: !s.sub })),
+      toggleGraph: () => this.setState(s => ({ graph: !s.graph })),
+      regions,
+      catBars,
+      sel,
+      goFulltime: () => { window.location.href = '풀타임 근무 상세 (웹).dc.html'; },
+    };
+  }
+}
+</script>
 </body>
 </html>

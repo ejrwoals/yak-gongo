@@ -117,6 +117,23 @@ class AgentReviewSession(models.Model):
         return f"agent_session({self.posting_id}) @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
+class DashboardSnapshot(models.Model):
+    """웹 대시보드용 통계 스냅샷. 최신 row가 현재 노출되는 대시보드 데이터.
+
+    admin의 '대시보드 업데이트' 버튼이 DB 전체를 집계해 한 row를 추가한다.
+    created_at이 프론트의 "Last Update"로 쓰인다.
+    """
+    created_at = models.DateTimeField(auto_now_add=True)
+    data = models.JSONField(default=dict)            # compute_dashboard_data() 결과
+    posting_count = models.IntegerField(default=0)   # 집계 대상 공고 수 (관리 목록 표시용)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"dashboard_snapshot @ {self.created_at:%Y-%m-%d %H:%M} ({self.posting_count}건)"
+
+
 class PipelineRun(models.Model):
     STATUS_CHOICES = [
         ('running', '실행 중'),

@@ -12,8 +12,16 @@ from django.utils import timezone
 from django.utils.html import format_html
 from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilder
 
+from .dashboard_stats import compute_dashboard_data
+from .dataframe import build_dataframe
 from .forms import PipelineRunForm
-from .models import AdminCheck, AgentReviewSession, JobPosting, PipelineRun
+from .models import (
+    AdminCheck,
+    AgentReviewSession,
+    DashboardSnapshot,
+    JobPosting,
+    PipelineRun,
+)
 from .review_presets import (
     FIELD_META,
     REVIEW_PRESETS,
@@ -711,4 +719,35 @@ class AgentReviewSessionAdmin(admin.ModelAdmin):
     list_filter = (('created_at', DateRangeFilterBuilder(title='검토 일시')),)
     ordering = ('-created_at',)
     readonly_fields = ('posting', 'created_at', 'transcript', 'applied_changes', 'generated_comment')
+
+
+@admin.register(DashboardSnapshot)
+class DashboardSnapshotAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'posting_count')
+    ordering = ('-created_at',)
+    readonly_fields = ('created_at', 'posting_count', 'data')
+
+    change_list_template = 'admin/postings/dashboardsnapshot/change_list.html'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('update/', self.admin_site.admin_view(self.update_view),
+                 name='dashboardsnapshot_update'),
+        ]
+        return custom + urls
+
+    def update_view(self, request):
+        """현재 DB 전체를 집계해 새 대시보드 스냅샷을 저장한다."""
+        try:
+            df = build_dataframe()
+            data = compute_dashboard_data(df)
+            DashboardSnapshot.objects.create(data=data, posting_count=int(len(df)))
+            self.message_user(
+                request,
+                f'대시보드를 최신 데이터로 업데이트했습니다. (공고 {len(df)}건 집계)',
+            )
+        except Exception as e:
+            self.message_user(request, f'대시보드 업데이트 실패: {e}', level='error')
+        return redirect('../')
 
