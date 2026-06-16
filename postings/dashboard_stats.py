@@ -171,6 +171,27 @@ def _etc_section(df: pd.DataFrame) -> dict:
     }
 
 
+def _home_overview(df: pd.DataFrame) -> dict:
+    """홈 '그래프 더보기' — 전국(장기 근무 = 풀타임+주말+기타) 근무시간-시급 산점도.
+
+    노션 '근무 시간과 시급의 관계 with Regression line - 전국' 등과 동일하게
+    df_nationwide = 일회성 근무 여부 == 'No' (장기 근무 전체)를 사용한다.
+    월급은 프론트에서 시급 × 시간 × 4.34 로 환산한다.
+    """
+    long = df[df['일회성 근무 여부'] == 'No']
+    sub = long.dropna(subset=[HOURS, WAGE])
+    pts = [{
+        'x': round(float(h), 2),
+        'y': round(float(w), 3),
+        'region': (reg if reg in REGION_ORDER else '지방'),
+    } for h, w, reg in zip(sub[HOURS], sub[WAGE], sub['지역 대분류'])]
+    return {
+        'count': int(len(sub)),
+        'pts': pts,
+        'regression': _regression(sub[HOURS], sub[WAGE]),
+    }
+
+
 def _onetime_section(df: pd.DataFrame) -> dict:
     """일회성 단기 페이지 데이터. 노션 '일회성 단기 근무' 차트들과 동일한 정의.
 
@@ -230,11 +251,11 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
         return _num(s.mean()) if len(s) else None
 
     category_avg = [
-        {'name': '전국 평균', 'v': _mean(norm_wage)},
-        {'name': '풀타임', 'v': _mean(full[WAGE])},
-        {'name': '주말 파트', 'v': _mean(weekend[WAGE])},
-        {'name': '기타 파트', 'v': _mean(etc[WAGE])},
-        {'name': '일회성 단기', 'v': _mean(one_time[ONE_TIME_WAGE])},
+        {'name': '전국 평균', 'v': _mean(norm_wage), 'n': int(len(df))},
+        {'name': '풀타임', 'v': _mean(full[WAGE]), 'n': int(len(full))},
+        {'name': '주말 파트', 'v': _mean(weekend[WAGE]), 'n': int(len(weekend))},
+        {'name': '기타 파트', 'v': _mean(etc[WAGE]), 'n': int(len(etc))},
+        {'name': '일회성 단기', 'v': _mean(one_time[ONE_TIME_WAGE]), 'n': int(len(one_time))},
     ]
 
     # ---- 홈: 지역별(5분류) 평균 시급 (일회성 통합 시급 기준) ----
@@ -242,6 +263,19 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
     df_norm[WAGE] = norm_wage
     home_region_avg = [
         {'name': r['nm'], 'v': r['mn']} for r in _region_means(df_norm)
+    ]
+
+    # ---- 홈: 근무형태별 × 지역별 평균 시급 (칩 선택 → 전국 + 5지역 막대) ----
+    def _cat_regions(sub, wage_col=WAGE):
+        return [{'nm': r['nm'], 'v': r['mn']} for r in _region_means(sub, wage_col)]
+
+    by_category = [
+        {'name': '전체', 'national': _mean(norm_wage),
+         'regions': [{'nm': r['name'], 'v': r['v']} for r in home_region_avg]},
+        {'name': '풀타임', 'national': _mean(full[WAGE]), 'regions': _cat_regions(full)},
+        {'name': '주말 파트', 'national': _mean(weekend[WAGE]), 'regions': _cat_regions(weekend)},
+        {'name': '기타 파트', 'national': _mean(etc[WAGE]), 'regions': _cat_regions(etc)},
+        {'name': '일회성 단기', 'national': _mean(one_time[ONE_TIME_WAGE]), 'regions': _cat_regions(one_time, ONE_TIME_WAGE)},
     ]
 
     # ---- 풀타임 산점도: 실제 공고별 점 ----
@@ -295,6 +329,8 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
             'totalPostings': int(len(df)),
             'categoryAvg': category_avg,
             'regionAvg': home_region_avg,
+            'byCategory': by_category,
+            'overview': _home_overview(df),
         },
         'fulltime': fulltime,
         'weekend': _weekend_section(df),

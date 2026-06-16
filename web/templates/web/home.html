@@ -12,6 +12,13 @@
   button { font-family: inherit; cursor: pointer; border: none; background: none; }
   a.gallery-card { transition: transform .15s, box-shadow .15s; }
   a.gallery-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(30,40,30,0.09) !important; }
+  #graph-modal-open { transition: background .15s, box-shadow .15s; }
+  #graph-modal-open:hover { background:#F6F6F3; box-shadow:0 4px 12px rgba(30,40,30,0.08); }
+  .modal-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(20,28,22,0.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .modal-overlay[hidden] { display: none; }
+  .modal-dialog { position: relative; background: #fff; border-radius: 18px; width: 100%; max-width: 920px; max-height: 88vh; overflow-y: auto; padding: 30px 34px 36px; box-shadow: 0 20px 60px rgba(0,0,0,0.28); }
+  .modal-close { position: absolute; top: 16px; right: 18px; width: 34px; height: 34px; border-radius: 10px; background: #F1F1EE; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+  .modal-close:hover { background: #E7E7E1; }
 </style>
 </head>
 <body>
@@ -31,7 +38,7 @@
           <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
           <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">시급 비교</a>
           <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">공고 분석</a>
-          <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">방법론</a>
+          <a id="region-modal-open" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none; cursor:pointer;">지역 분류 기준</a>
         </nav>
       </div>
       <div style="display:flex; align-items:center; gap:12px;">
@@ -53,39 +60,12 @@
     <!-- 분석 공고 수 callout -->
     <div style="position:relative; background:#fff; border:1px solid #ECECE4; border-radius:14px; padding:24px 30px; box-shadow:0 6px 20px rgba(30,40,30,0.05); margin-bottom:26px; overflow:hidden;">
       <div style="position:absolute; top:0; left:0; bottom:0; width:5px; background:linear-gradient(#1BAA6B,#0F7A4C);"></div>
-      <div style="display:flex; align-items:center; gap:24px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
         <span style="font-size:16px; font-weight:700; color:#454C43; white-space:nowrap;">현재까지 분석한 <b style="color:#138255;">공고 수</b> :</span>
         <span style="font-size:34px; font-weight:800; letter-spacing:-1.5px; color:#138255; white-space:nowrap;"><span id="total-postings"></span><span style="font-size:17px; margin-left:4px;">개</span></span>
-        <span style="margin-left:auto; font-size:12px; font-weight:700; color:#0F7A4C; background:#E4F4EB; padding:6px 12px; border-radius:999px;">세후 기준 · 매주 업데이트</span>
-      </div>
-    </div>
-
-    <!-- toggles -->
-    <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:34px;">
-      <button data-toggle="sub" style="display:flex; align-items:center; gap:10px; padding:8px 6px; text-align:left; width:fit-content; white-space:nowrap;">
-        <svg data-caret width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-        <span style="font-size:15px; font-weight:800;">세부 분류</span>
-        <span style="font-size:15px; font-weight:500; color:#9AA098;">더보기</span>
-      </button>
-      <div data-panel="sub" hidden>
-        <div style="margin:2px 0 6px 28px; padding:16px 20px; background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px 28px; max-width:760px;">
-          <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#225E97;">풀타임</b> · 주 5일 이상 정규 상근 근무</div>
-          <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#A6711A;">주말 파트</b> · 토·일 중심 파트타임 근무</div>
-          <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#2F7E48;">기타 파트</b> · 평일 특정 요일·시간대 파트</div>
-          <div style="font-size:13.5px; line-height:1.6; color:#5C635A;"><b style="color:#5E43A4;">일회성 단기</b> · 1회·초단기 대체 근무</div>
-        </div>
-      </div>
-
-      <button data-toggle="graph" style="display:flex; align-items:center; gap:10px; padding:8px 6px; text-align:left; width:fit-content; white-space:nowrap;">
-        <svg data-caret width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-6 4 3 6-8"/></svg>
-        <span style="font-size:15px; font-weight:800;">그래프</span>
-        <span style="font-size:15px; font-weight:500; color:#9AA098;">더보기</span>
-      </button>
-      <div data-panel="graph" hidden>
-        <div style="margin:2px 0 6px 28px; padding:20px 24px; background:#fff; border:1px solid #ECECE4; border-radius:12px; max-width:620px;">
-          <div style="font-size:12px; font-weight:600; color:#9AA098; margin-bottom:16px;">근무형태별 평균 시급 (만원)</div>
-          <div id="cat-bars" style="display:flex; flex-direction:column; gap:13px;"></div>
+        <div style="margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+          <span style="font-size:12px; font-weight:700; color:#0F7A4C; background:#E4F4EB; padding:6px 12px; border-radius:999px; white-space:nowrap;">세후 기준 · 매주 업데이트</span>
+          <span style="font-size:12.5px; font-weight:700; color:#5C635A; white-space:nowrap;">Last Update : <span id="last-update" style="font-weight:600; color:#5C635A;"></span></span>
         </div>
       </div>
     </div>
@@ -95,15 +75,6 @@
 
       <!-- LEFT -->
       <div>
-        <!-- Last Update -->
-        <div style="position:relative; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:16px 22px; margin-bottom:26px; overflow:hidden;">
-          <div style="position:absolute; top:0; left:0; bottom:0; width:4px; background:#1E2420;"></div>
-          <div style="display:flex; align-items:center; gap:18px;">
-            <span style="font-size:14.5px; font-weight:800; color:#2A302A;">Last Update :</span>
-            <span id="last-update" style="font-size:14.5px; font-weight:600; color:#5C635A;"></span>
-          </div>
-        </div>
-
         <!-- colored wage list -->
         <div style="display:flex; flex-direction:column; gap:14px; margin-bottom:30px;">
 
@@ -148,24 +119,26 @@
           </div>
         </div>
 
-        <!-- 지역별 비교 -->
-        <div style="display:flex; align-items:center; gap:10px; margin:0 0 14px 2px;">
+        <!-- 근무시간별 시급 그래프 (모달 열기) -->
+        <button id="graph-modal-open" style="display:flex; align-items:center; justify-content:space-between; gap:9px; padding:14px 20px; border-radius:12px; border:1px solid #EAEAE3; background:#fff; box-shadow:0 2px 8px rgba(30,40,30,0.05); width:calc(100% - 18px); white-space:nowrap; margin:0 0 30px 18px;">
+          <span style="display:flex; align-items:center; gap:9px;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-6 4 3 6-8"/></svg>
+            <span style="font-size:15px; font-weight:800;">근무시간별 시급 그래프</span>
+          </span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9AA098" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+
+        <!-- 지역별 평균 시급 비교 (근무형태 선택) -->
+        <div style="display:flex; align-items:center; gap:10px; margin:0 0 6px 2px;">
           <span style="width:6px; height:6px; border-radius:50%; background:#1E2420;"></span>
           <h3 style="margin:0; font-size:16px; font-weight:800; letter-spacing:-0.5px;">지역별 평균 시급 비교</h3>
         </div>
+        <p style="margin:0 0 14px 2px; font-size:12.5px; font-weight:600; color:#9AA098;">근무형태를 선택하면 전국·지역별 평균 시급을 비교할 수 있습니다.</p>
 
-        <div id="region-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;"></div>
+        <div id="cat-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;"></div>
 
         <div style="background:#fff; border:1px solid #ECECE4; border-radius:14px; padding:18px 20px; box-shadow:0 4px 14px rgba(30,40,30,0.04);">
-          <div id="region-bars" style="display:flex; flex-direction:column; gap:12px;"></div>
-          <div style="margin-top:14px; padding-top:14px; border-top:1px solid #F0F0EA; display:flex; align-items:center; justify-content:space-between;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="width:9px; height:9px; border-radius:50%; background:#169A60;"></span>
-              <span id="sel-name" style="font-size:13.5px; font-weight:800;"></span>
-              <span id="sel-rank" style="font-size:12.5px; font-weight:600; color:#9AA098;"></span>
-            </div>
-            <span style="font-size:15px; font-weight:800; color:#138255;"><span id="sel-value"></span><span style="font-size:11px; font-weight:700; margin-left:2px;">만원</span></span>
-          </div>
+          <div id="cat-region-bars" style="display:flex; flex-direction:column; gap:12px;"></div>
         </div>
       </div>
 
@@ -173,10 +146,6 @@
       <div>
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
           <h2 style="margin:0; font-size:21px; font-weight:800; letter-spacing:-0.8px;">어떤 정보가 궁금하세요?</h2>
-          <button style="margin-left:auto; display:flex; align-items:center; gap:6px; white-space:nowrap; padding:8px 14px; border-radius:9px; background:#138255; color:#fff; font-size:13.5px; font-weight:700; box-shadow:0 3px 8px rgba(19,130,85,0.25);">
-            새로 만들기
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
         </div>
 
         <div style="display:flex; flex-direction:column; gap:16px;">
@@ -186,9 +155,12 @@
             <div style="background:#DDEBF8; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#2E6FB0; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(46,111,176,0.18);">풀타임 근무</span>
             </div>
-            <div style="display:flex; align-items:center; gap:9px; padding:14px 20px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E6FB0" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
-              <span style="font-size:14px; font-weight:600; color:#46506E;">풀타임 근무</span>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px;">
+              <div style="display:flex; align-items:center; gap:9px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E6FB0" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
+                <span style="font-size:14px; font-weight:600; color:#46506E;">주 5일 이상 정규 상근 근무</span>
+              </div>
+              <span style="font-size:12px; font-weight:700; color:#225E97; background:#DDEBF8; padding:3px 10px; border-radius:999px; white-space:nowrap; flex:none;">공고 <span data-cat-count="풀타임"></span>개</span>
             </div>
           </a>
 
@@ -197,9 +169,12 @@
             <div style="background:#FBEFD2; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#C5891B; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(197,137,27,0.2);">주말파트 근무</span>
             </div>
-            <div style="display:flex; align-items:center; gap:9px; padding:14px 20px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
-              <span style="font-size:14px; font-weight:600; color:#7C5A12;">주말(토, 일) 파트 근무</span>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px;">
+              <div style="display:flex; align-items:center; gap:9px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
+                <span style="font-size:14px; font-weight:600; color:#7C5A12;">토·일 중심 파트타임 근무</span>
+              </div>
+              <span style="font-size:12px; font-weight:700; color:#A6711A; background:#FBEFD2; padding:3px 10px; border-radius:999px; white-space:nowrap; flex:none;">공고 <span data-cat-count="주말 파트"></span>개</span>
             </div>
           </a>
 
@@ -208,9 +183,12 @@
             <div style="background:#DEF0E4; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#3C9A5C; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(60,154,92,0.2);">기타파트 근무</span>
             </div>
-            <div style="display:flex; align-items:center; gap:9px; padding:14px 20px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3C9A5C" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
-              <span style="font-size:14px; font-weight:600; color:#2C6B41;">그 외 기타 파트 근무</span>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px;">
+              <div style="display:flex; align-items:center; gap:9px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3C9A5C" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
+                <span style="font-size:14px; font-weight:600; color:#2C6B41;">평일 특정 요일·시간대 파트</span>
+              </div>
+              <span style="font-size:12px; font-weight:700; color:#2F7E48; background:#DEF0E4; padding:3px 10px; border-radius:999px; white-space:nowrap; flex:none;">공고 <span data-cat-count="기타 파트"></span>개</span>
             </div>
           </a>
 
@@ -219,9 +197,12 @@
             <div style="background:#ECE4F8; padding:30px 22px; display:flex; align-items:center; justify-content:center;">
               <span style="font-size:42px; font-weight:800; line-height:1.0; color:#7B5BC4; letter-spacing:-2px; text-align:center; text-shadow:1.5px 1.5px 0 #fff, 4px 4px 0 rgba(123,91,196,0.2);">단기/1회 근무</span>
             </div>
-            <div style="display:flex; align-items:center; gap:9px; padding:14px 20px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7B5BC4" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
-              <span style="font-size:14px; font-weight:600; color:#574089;">일회성·단기 근무</span>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 20px;">
+              <div style="display:flex; align-items:center; gap:9px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7B5BC4" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
+                <span style="font-size:14px; font-weight:600; color:#574089;">1회·초단기 대체 근무</span>
+              </div>
+              <span style="font-size:12px; font-weight:700; color:#5E43A4; background:#ECE4F8; padding:3px 10px; border-radius:999px; white-space:nowrap; flex:none;">공고 <span data-cat-count="일회성 단기"></span>개</span>
             </div>
           </a>
 
@@ -231,8 +212,108 @@
     </div>
   </main>
 </div>
+
+<!-- 그래프 더보기 모달 -->
+<div id="graph-modal" class="modal-overlay" hidden>
+  <div class="modal-dialog">
+    <button id="graph-modal-close" class="modal-close" aria-label="닫기">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 style="margin:0 0 4px; font-size:20px; font-weight:800; letter-spacing:-0.5px;">근무 시간과 시급 그래프</h2>
+    <p style="margin:0 0 20px; font-size:13px; font-weight:600; color:#9AA098;">전국(풀타임 + 주말 + 기타 파트) 근무시간에 따른 시급·월급 분포</p>
+
+    <!-- callout: 풀타임 + 주말 + 기타 파트 공고 수 -->
+    <div style="position:relative; background:#fff; border:1px solid #ECECE4; border-radius:10px; padding:14px 20px; overflow:hidden; margin-bottom:18px;">
+      <div style="position:absolute; top:0; left:0; bottom:0; width:4px; background:#1E2420;"></div>
+      <div style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">풀타임 + 주말 + 기타 파트 공고 수 :</span>
+        <span style="font-size:20px; font-weight:800; color:#3A4138; letter-spacing:-0.5px;"><span id="ov-count"></span> <span style="font-size:13px;">개</span></span>
+      </div>
+    </div>
+    <p style="margin:0 0 14px; font-size:14px; line-height:1.75; color:#3A4138;"><b style="color:#2A302A;">&rarr;</b> 주당 일하는 시간을 x축, <span style="color:#E23B2E; font-weight:700;">시급(세후)</span>을 y축으로 하여 그래프로 표현했습니다. 각 점이 하나의 공고를 의미하며, 크게 <span style="background:#E7E0F5; border-radius:3px; padding:0 4px; font-weight:700; color:#5E43A4;">5개 지역</span>으로 구분하여 색깔을 칠했습니다.</p>
+    <figure style="margin:0 0 18px;">
+      <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">근무 시간과 시급의 관계 with Regression line &middot; 전국</figcaption>
+      <div id="ov-chart-region" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+    </figure>
+    <p style="margin:0 0 14px; font-size:14px; line-height:1.75; color:#3A4138;">y축을 <span style="color:#2F6FE0; font-weight:700;">월급(세후)</span>으로 환산시 :</p>
+    <figure style="margin:0;">
+      <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">주당 근무시간에 따른 월급 &middot; 전국</figcaption>
+      <div id="ov-chart-month" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+    </figure>
+  </div>
+</div>
+
+<!-- 지역 분류 기준 모달 -->
+<div id="region-modal" class="modal-overlay" hidden>
+  <div class="modal-dialog" style="max-width:680px;">
+    <button id="region-modal-close" class="modal-close" aria-label="닫기">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 style="margin:0 0 4px; font-size:20px; font-weight:800; letter-spacing:-0.5px;">지역 분류 기준</h2>
+    <p style="margin:0 0 20px; font-size:13px; font-weight:600; color:#9AA098;">공고 지역은 크게 5개 대분류로 나누어 통계를 산출했습니다.</p>
+
+    <p style="margin:0 0 16px; font-size:14px; line-height:1.75; color:#3A4138;">
+      지역은 크게 <b style="color:#2A302A;">서울 &middot; 인천 &middot; 경기 중부 &middot; 경기 외곽 &middot; 지방</b>으로 분류했습니다.
+      보통 서울에서 멀어질수록 근무 약사의 페이가 증가한다는 인식이 있는데, 정말 그런지 보기 위해 서울에서 멀어지는 방향으로 지역을 세분화했습니다.
+    </p>
+
+    <!-- 색상 범례 -->
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#B0203A;"></span>서울</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#E8843C;"></span>인천</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#E9CE54;"></span>경기 중부</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#6FB7E0;"></span>경기 외곽</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#2E3E8F;"></span>지방</span>
+    </div>
+
+    <!-- 지도 -->
+    <div style="display:flex; gap:14px; align-items:stretch; margin-bottom:20px; flex-wrap:wrap;">
+      <figure style="flex:2 1 320px; margin:0; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:10px 12px;">
+        <figcaption style="font-size:12.5px; font-weight:700; color:#3A4138; margin-bottom:6px;">수도권 확대</figcaption>
+        <div id="region-map-capital"></div>
+      </figure>
+      <figure style="flex:1 1 180px; margin:0; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column;">
+        <figcaption style="font-size:12.5px; font-weight:700; color:#3A4138; margin-bottom:6px;">전국 (<span style="color:#2E3E8F;">지방</span> = 그 외 전 지역)</figcaption>
+        <div id="region-map-nation" style="flex:1; display:flex; align-items:center;"></div>
+      </figure>
+    </div>
+
+    <p style="margin:0 0 16px; font-size:14px; line-height:1.75; color:#3A4138;">
+      <b style="color:#2A302A;">경기도</b>는 서울에 상대적으로 인접한 <b style="color:#A6711A;">경기 중부</b>, 바깥쪽의 <b style="color:#2E6FB0;">경기 외곽</b>으로 나누었습니다.
+      <span style="color:#9AA098; font-weight:600;">(공식적인 분류는 아니고 주관성이 들어간 분류입니다.)</span>
+    </p>
+
+    <!-- 경기 중부 -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:16px 18px; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <span style="width:10px; height:10px; border-radius:50%; background:#E9CE54;"></span>
+        <span style="font-size:14px; font-weight:800; color:#2A302A;">경기 중부</span>
+      </div>
+      <p style="margin:0; font-size:13.5px; line-height:1.7; color:#5C635A;">김포, 고양, 양주, 의정부, 남양주, 구리, 하남, 경기도광주, 성남, 과천, 의왕, 안양, 군포, 광명, 시흥, 부천</p>
+    </div>
+
+    <!-- 경기 외곽 -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:16px 18px; margin-bottom:18px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <span style="width:10px; height:10px; border-radius:50%; background:#6FB7E0;"></span>
+        <span style="font-size:14px; font-weight:800; color:#2A302A;">경기 외곽</span>
+      </div>
+      <p style="margin:0; font-size:13.5px; line-height:1.7; color:#5C635A;">파주, 동두천, 연천, 포천, 가평, 양평, 여주, 이천, 안성, 용인, 평택, 오산, 화성, 수원, 안산</p>
+    </div>
+
+    <div style="background:#F6F6F3; border-radius:10px; padding:14px 16px;">
+      <p style="margin:0; font-size:12.5px; line-height:1.7; color:#828A80;">
+        &lowast; '도'나 '시' 단위까지 더 자세하게 세분화하여 통계를 낸다면 더 좋겠지만, 각 도시별로 세분화하면 표본 수가 너무 작아져 통계 신뢰도가 낮아지는 문제가 있습니다.
+        표본 수가 더 늘어난다면 추후 도시별 평균 시급도 계산해볼 수 있을 것 같습니다.
+      </p>
+    </div>
+  </div>
+</div>
 {{ dashboard|json_script:"dashboard-data" }}
+<script src="{% static 'web/js/charts.js' %}"></script>
 <script src="{% static 'web/js/ui.js' %}"></script>
+<script src="{% static 'web/js/korea-regions.js' %}"></script>
+<script src="{% static 'web/js/region-map.js' %}"></script>
 <script src="{% static 'web/js/home.js' %}"></script>
 </body>
 </html>

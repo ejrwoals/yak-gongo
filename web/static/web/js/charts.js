@@ -104,12 +104,22 @@ window.Charts = (() => {
       for (let x = lineFrom; x <= lineTo; x += 2) { top.push([mapX(x), mapY(regY(x) + band)]); bot.push([mapX(x), mapY(regY(x) - band)]); }
       e.push(h('polygon', { points: top.concat(bot.reverse()).map(p => p.join(',')).join(' '), fill: 'rgba(226,59,46,0.13)' }));
     }
-    pts.forEach(p => { const v = month ? p.month : p.y; e.push(h('circle', { cx: mapX(p.x), cy: mapY(Math.max(ymin, Math.min(ymax, v))), r: 3, fill: mode === 'region' ? p.col : 'rgba(55,55,55,0.40)', opacity: mode === 'region' ? 0.82 : 1 })); });
+    const regionColored = mode === 'region' || opts.colorByRegion;
+    pts.forEach(p => { const v = month ? p.month : p.y; e.push(h('circle', { cx: mapX(p.x), cy: mapY(Math.max(ymin, Math.min(ymax, v))), r: 3, fill: regionColored ? p.col : 'rgba(55,55,55,0.40)', opacity: regionColored ? 0.82 : 1 })); });
     const rc = month ? '#2F6FE0' : '#E23B2E';
-    e.push(h('line', { x1: mapX(lineFrom), y1: mapY(regY(lineFrom)), x2: mapX(lineTo), y2: mapY(regY(lineTo)), stroke: rc, strokeWidth: 3, strokeLinecap: 'round' }));
-    if (!month) e.push(h('text', { x: L + pw - 14, y: T + 58, textAnchor: 'end', fontSize: 14, fill: '#E23B2E', fontWeight: 600 }, '회귀선: ' + regLabel(reg)));
-    if (mode === 'region') {
-      const lx = L + pw - 150, ly = T + 12;
+    if (month && opts.monthCurve) {
+      // 월급 회귀 곡선: (시급회귀선) × 시간 × 4.34 (노션 plot_monthly_wage와 동일)
+      const pl = [];
+      for (let x = lineFrom; x <= lineTo; x += 1) pl.push([mapX(x), mapY((reg.slope * x + reg.intercept) * x * 4.34)]);
+      e.push(h('polyline', { points: pl.map(p => p.join(',')).join(' '), fill: 'none', stroke: rc, strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round' }));
+    } else {
+      e.push(h('line', { x1: mapX(lineFrom), y1: mapY(regY(lineFrom)), x2: mapX(lineTo), y2: mapY(regY(lineTo)), stroke: rc, strokeWidth: 3, strokeLinecap: 'round' }));
+    }
+    // 회귀선 수식 — region 모드는 우상단 지역 범례를 피해 그 아래에 배치
+    if (!month) e.push(h('text', { x: L + pw - 14, y: mode === 'region' ? T + 138 : T + 58, textAnchor: 'end', fontSize: 14, fill: '#E23B2E', fontWeight: 600 }, '회귀선: ' + regLabel(reg)));
+    if (regionColored) {
+      // 월급 차트(month)는 우상단에 회귀선 범례가 있으므로 지역 범례를 좌상단에 둔다
+      const lx = month ? (L + 14) : (L + pw - 150), ly = T + 12;
       const items = [['서울', '#B0203A'], ['인천', '#E8843C'], ['경기 중부', '#E9CE54'], ['경기 외곽', '#6FB7E0'], ['지방', '#2E3E8F']];
       e.push(h('rect', { x: lx - 10, y: ly - 10, width: 150, height: 118, fill: '#FFFFFF', stroke: '#D9D9D2', rx: 4 }));
       e.push(h('text', { x: lx, y: ly + 4, fontSize: 11, fill: '#555', fontWeight: 600 }, '지역 분류'));
