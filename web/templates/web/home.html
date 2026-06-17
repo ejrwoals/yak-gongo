@@ -36,7 +36,7 @@
         </div>
         <nav style="display:flex; align-items:center; gap:4px;">
           <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
-          <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">시급 비교</a>
+          <a href="{% url 'web:compare' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">내 시급 비교</a>
           <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">공고 분석</a>
           <a id="region-modal-open" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none; cursor:pointer;">지역 분류 기준</a>
         </nav>
@@ -119,11 +119,11 @@
           </div>
         </div>
 
-        <!-- 근무시간별 시급 그래프 (모달 열기) -->
+        <!-- 주당 근무 시간과 시급의 상관관계 그래프 (모달 열기) -->
         <button id="graph-modal-open" style="display:flex; align-items:center; justify-content:space-between; gap:9px; padding:14px 20px; border-radius:12px; border:1px solid #EAEAE3; background:#fff; box-shadow:0 2px 8px rgba(30,40,30,0.05); width:calc(100% - 18px); white-space:nowrap; margin:0 0 30px 18px;">
           <span style="display:flex; align-items:center; gap:9px;">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#C5891B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-6 4 3 6-8"/></svg>
-            <span style="font-size:15px; font-weight:800;">근무시간별 시급 그래프</span>
+            <span style="font-size:15px; font-weight:800;">주당 근무 시간과 시급의 상관관계</span>
           </span>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9AA098" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>

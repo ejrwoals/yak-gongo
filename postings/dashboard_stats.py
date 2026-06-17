@@ -80,6 +80,39 @@ def _region_dist(df: pd.DataFrame, wage_col: str = WAGE):
     return out
 
 
+def _compare_pool(df: pd.DataFrame, wage_col: str = WAGE) -> dict:
+    """'내 시급 비교' 페이지용 분포 풀: 전국 + 지역별 시급 값 배열·평균·n.
+
+    프론트는 이 값 배열(vals)로 사용자가 입력한 시급의 퍼센타일을 계산한다.
+    """
+    sub = df.dropna(subset=[wage_col])
+    vals = [round(float(v), 3) for v in sub[wage_col]]
+    national = {
+        'vals': vals,
+        'mean': _num(sub[wage_col].mean()) if len(vals) else None,
+        'n': len(vals),
+    }
+    regions = [
+        {'nm': r['nm'], 'mean': r['mn'], 'n': r['n'], 'vals': r['vals']}
+        for r in _region_dist(df, wage_col)
+    ]
+    return {'national': national, 'regions': regions}
+
+
+def _hours_pts(df: pd.DataFrame, wage_col: str = WAGE):
+    """(주당 근무시간, 시급) 산점도 점들 + 1차 회귀. '근무시간 대비 시급' 차트 입력."""
+    sub = df.dropna(subset=[HOURS, wage_col])
+    pts = [{'x': round(float(h), 2), 'y': round(float(w), 3)}
+           for h, w in zip(sub[HOURS], sub[wage_col])]
+    return pts, _regression(sub[HOURS], sub[wage_col])
+
+
+def _compare_cat(key, name, df, wage_col=WAGE, with_hours=True):
+    """'내 시급 비교' 한 근무형태 항목: 분포 풀 + (선택) 근무시간-시급 산점도."""
+    pts, reg = _hours_pts(df, wage_col) if with_hours else ([], None)
+    return {'key': key, 'name': name, **_compare_pool(df, wage_col), 'pts': pts, 'reg': reg}
+
+
 def _histogram(df: pd.DataFrame):
     """정수 시간으로 반올림한 주당 근무시간 히스토그램: [[시간, 공고수], …] (시간 오름차순)."""
     hrs = df.dropna(subset=[HOURS])[HOURS].round().astype(int)
@@ -138,6 +171,7 @@ def _weekend_section(df: pd.DataFrame) -> dict:
         'dateScatter': date_scatter,
         'regionMeans': _region_means(wk),
         'bubble': _bubble(wk),
+        'dist': _region_dist(wk),
     }
 
 
@@ -168,6 +202,7 @@ def _etc_section(df: pd.DataFrame) -> dict:
         },
         'regionMeans': _region_means(etc),
         'bubble': _bubble(etc),
+        'dist': _region_dist(etc),
     }
 
 
@@ -227,6 +262,7 @@ def _onetime_section(df: pd.DataFrame) -> dict:
         'dateScatter': date_scatter,
         'regionMeans': region_means,
         'bubble': _bubble(ot, W),
+        'dist': _region_dist(ot, W),
         'comparison': comparison,
     }
 
@@ -324,6 +360,16 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
         'fullRegression': _regression(full_scatter_df[HOURS], full_scatter_df[WAGE]),
     }
 
+    # ---- '내 시급 비교' 페이지: 근무형태별 전국·지역 분포 풀 + 근무시간-시급 산점도 ----
+    compare = {
+        'categories': [
+            _compare_cat('fulltime', '풀타임', full),
+            _compare_cat('weekend', '주말 파트', weekend),
+            _compare_cat('etc', '기타 파트', etc),
+            _compare_cat('onetime', '일회성 단기', one_time, ONE_TIME_WAGE, with_hours=False),
+        ],
+    }
+
     return {
         'home': {
             'totalPostings': int(len(df)),
@@ -336,4 +382,5 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
         'weekend': _weekend_section(df),
         'etc': _etc_section(df),
         'onetime': _onetime_section(df),
+        'compare': compare,
     }

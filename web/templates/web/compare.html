@@ -1,0 +1,127 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 시급 비교 — 약사 시급 리포트</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+<style>
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  input, select { font-family: inherit; }
+  .field { width:100%; padding:11px 13px; border:1px solid #DCDCD4; border-radius:10px; font-size:15px; color:#2A302A; background:#fff; outline:none; transition:border .15s, box-shadow .15s; }
+  .field:focus { border-color:#1BAA6B; box-shadow:0 0 0 3px rgba(27,170,107,0.12); }
+  .seg { padding:9px 16px; border-radius:10px; font-size:14px; font-weight:700; color:#646B62; background:#F2F2EF; border:1px solid #E7E7E1; transition:all .15s; }
+  .seg[aria-pressed="true"] { color:#fff; background:linear-gradient(150deg,#1BAA6B,#0F7A4C); border-color:#0F7A4C; box-shadow:0 4px 10px rgba(15,122,76,0.22); }
+  #calc-btn { transition:transform .12s, box-shadow .15s, filter .15s; }
+  #calc-btn:hover { filter:brightness(1.04); box-shadow:0 8px 20px rgba(15,122,76,0.28); }
+  #calc-btn:active { transform:translateY(1px); }
+</style>
+</head>
+<body>
+<div style="min-height:100vh; width:100%; background:#FBFBF8; color:#1E2420; font-family:'Pretendard Variable',Pretendard,system-ui,sans-serif;">
+
+  <!-- ===== TOP NAV ===== -->
+  <header style="position:sticky; top:0; z-index:30; height:62px; background:rgba(251,251,248,0.88); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid #EDEDE7;">
+    <div style="max-width:1160px; height:100%; margin:0 auto; padding:0 40px; display:flex; align-items:center; justify-content:space-between;">
+      <div style="display:flex; align-items:center; gap:34px;">
+        <a href="{% url 'web:home' %}" style="display:flex; align-items:center; gap:11px; text-decoration:none; color:inherit;">
+          <div style="width:34px; height:34px; border-radius:10px; background:linear-gradient(150deg,#1BAA6B,#0F7A4C); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(15,122,76,0.26);">
+            <span style="font-size:17px; font-weight:800; color:#fff; letter-spacing:-1px;">약</span>
+          </div>
+          <span style="font-size:16px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">약사 시급 리포트</span>
+        </a>
+        <nav style="display:flex; align-items:center; gap:4px;">
+          <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">홈</a>
+          <a href="{% url 'web:compare' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">내 시급 비교</a>
+          <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">공고 분석</a>
+          <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">지역 분류 기준</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width:880px; margin:0 auto; padding:42px 40px 90px;">
+
+    <!-- title -->
+    <h1 style="margin:0 0 10px; font-size:28px; font-weight:800; letter-spacing:-1px;">내 시급과 비교하기</h1>
+    <p style="max-width:680px; margin:0 0 30px; font-size:15.5px; line-height:1.8; color:#5C635A; letter-spacing:-0.2px;">
+      내 근무 조건과 시급을 입력하면, <b style="color:#2A302A;">같은 근무형태의 전국·지역 공고</b> 분포에서 내 시급이 <b style="color:#138255;">상위 몇 %</b>인지 알려드립니다. 모든 시급은 <b style="color:#0F7A4C;">세후</b> 기준입니다.
+    </p>
+
+    <!-- ===== INPUT FORM ===== -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:16px; padding:26px 28px; box-shadow:0 6px 20px rgba(30,40,30,0.05);">
+
+      <!-- 근무 형태 -->
+      <div style="margin-bottom:22px;">
+        <div style="font-size:13.5px; font-weight:700; color:#454C43; margin-bottom:9px;">근무 형태</div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="seg" data-worktype="long" aria-pressed="true">지속성 근무</button>
+          <button type="button" class="seg" data-worktype="onetime" aria-pressed="false">일회성 단기</button>
+        </div>
+        <p style="margin:8px 2px 0; font-size:12.5px; font-weight:600; color:#9AA098;">정기적으로 출근하는 근무는 <b>지속성</b>, 하루·단기 대체 근무는 <b>일회성 단기</b>를 선택하세요.</p>
+      </div>
+
+      <!-- 스케줄 (지속성일 때만) -->
+      <div id="schedule-block">
+        <hr style="border:none; border-top:1px solid #F0F0EA; margin:0 0 20px;" />
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:22px 26px;">
+          <!-- 평일 -->
+          <div>
+            <div style="font-size:13.5px; font-weight:800; color:#2A302A; margin-bottom:10px;">평일 근무</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label style="display:flex; align-items:center; gap:10px; font-size:13.5px; color:#5C635A;"><span style="width:62px; flex:none;">출근 시각</span><input class="field" type="number" id="wd-start" step="0.5" min="0" max="24" placeholder="예: 9"></label>
+              <label style="display:flex; align-items:center; gap:10px; font-size:13.5px; color:#5C635A;"><span style="width:62px; flex:none;">퇴근 시각</span><input class="field" type="number" id="wd-end" step="0.5" min="0" max="24" placeholder="예: 18"></label>
+              <label style="display:flex; align-items:center; gap:10px; font-size:13.5px; color:#5C635A;"><span style="width:62px; flex:none;">근무 일수</span><input class="field" type="number" id="wd-days" step="0.5" min="0" max="7" placeholder="예: 5"></label>
+            </div>
+          </div>
+          <!-- 주말 -->
+          <div>
+            <div style="font-size:13.5px; font-weight:800; color:#2A302A; margin-bottom:10px;">주말 근무 <span style="font-weight:600; color:#9AA098;">(없으면 0)</span></div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label style="display:flex; align-items:center; gap:10px; font-size:13.5px; color:#5C635A;"><span style="width:62px; flex:none;">출근 시각</span><input class="field" type="number" id="we-start" step="0.5" min="0" max="24" placeholder="예: 9"></label>
+              <label style="display:flex; align-items:center; gap:10px; font-size:13.5px; color:#5C635A;"><span style="width:62px; flex:none;">퇴근 시각</span><input class="field" type="number" id="we-end" step="0.5" min="0" max="24" placeholder="예: 13"></label>
+              <label style="display:flex; align-items:center; gap:10px; font-size:13.5px; color:#5C635A;"><span style="width:62px; flex:none;">근무 일수</span><input class="field" type="number" id="we-days" step="0.5" min="0" max="2" placeholder="예: 0"></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 자동 계산된 주당 근무시간 -->
+        <div style="display:flex; align-items:center; gap:10px; margin:18px 0 4px; padding:12px 16px; background:#F6F6F3; border:1px solid #EAEAE3; border-radius:10px;">
+          <span style="font-size:13.5px; font-weight:700; color:#5C635A;">자동 계산된 <b style="color:#2A302A;">주당 근무 시간</b> :</span>
+          <span style="font-size:18px; font-weight:800; color:#138255; letter-spacing:-0.5px;"><span id="hours-out">—</span> <span style="font-size:12px;">시간</span></span>
+        </div>
+      </div>
+
+      <hr style="border:none; border-top:1px solid #F0F0EA; margin:20px 0;" />
+
+      <!-- 지역 + 시급 -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:22px 26px;">
+        <label style="display:block;">
+          <span style="display:block; font-size:13.5px; font-weight:700; color:#454C43; margin-bottom:9px;">지역</span>
+          <select class="field" id="region">
+            <option value="서울">서울</option>
+            <option value="인천">인천</option>
+            <option value="경기 중부">경기 중부</option>
+            <option value="경기 외곽">경기 외곽</option>
+            <option value="지방">지방</option>
+          </select>
+        </label>
+        <label style="display:block;">
+          <span style="display:block; font-size:13.5px; font-weight:700; color:#454C43; margin-bottom:9px;">내 시급 <span style="font-weight:600; color:#9AA098;">(세후, 만원)</span></span>
+          <input class="field" type="number" id="my-wage" step="0.1" min="0" placeholder="예: 3.0">
+        </label>
+      </div>
+
+      <p id="form-error" hidden style="margin:16px 0 0; font-size:13.5px; font-weight:700; color:#D9483B;"></p>
+
+      <button id="calc-btn" data-result-url="{% url 'web:compare_result' %}" style="margin-top:22px; width:100%; padding:15px; border-radius:12px; background:linear-gradient(150deg,#1BAA6B,#0F7A4C); color:#fff; font-size:16px; font-weight:800; letter-spacing:-0.3px; box-shadow:0 5px 14px rgba(15,122,76,0.22);">계산하기</button>
+    </div>
+
+  </main>
+</div>
+<script src="{% static 'web/js/compare.js' %}"></script>
+</body>
+</html>

@@ -20,14 +20,12 @@
 
   mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false }));
   mount('chart-date-region', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: true, yPadTop: 0.7 }));
-  mount('chart-bubble', C.buildBubble(d.bubble, d.regionMeans, {}));
-  // 나의 시급 비교: 동일 버블 차트 + 예시 별표 (인천, 3.7만원) — 노션과 동일
-  mount('chart-my-bubble', C.buildBubble(d.bubble, d.regionMeans, { star: { region: '인천', y: 3.7 } }));
+  mount('chart-bubble', C.buildViolin(d.dist));
+  // 나의 시급 비교: 동일 분포 + 예시 별표 (인천, 3.7만원)
+  mount('chart-my-bubble', C.buildViolin(d.dist, { star: { region: '인천', y: 3.7 } }));
 
-  // 일회성 vs 장기 IQR 비교 (buildStrip 재사용, x축 = 근무 지속성)
-  const cmpMax = Math.max(...d.comparison.flatMap(g => g.vals));
-  const cmpYmax = Math.ceil((cmpMax + 0.3) * 2) / 2;
-  mount('chart-comparison', C.buildStrip(d.comparison, cmpYmax, { xLabel: '근무 지속성' }));
+  // 일회성 vs 장기 분포 비교 (x축 = 근무 지속성)
+  mount('chart-comparison', C.buildViolin(d.comparison, { xLabel: '근무 지속성' }));
 
   // 지역별 평균값 표
   const tdL = 'border:1px solid #E6E6DF; padding:10px 14px; font-weight:700; color:#454C43;';

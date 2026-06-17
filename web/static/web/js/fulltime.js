@@ -29,8 +29,8 @@
   mount('chart-scatter-all', C.buildScatter(pts, 'all', d.regression.wage));
   mount('chart-monthly', C.buildScatter(pts, 'month', d.regression.month));
   mount('chart-regional', C.buildScatter(pts, 'region', d.regression.wage));
-  mount('chart-dist', C.buildStrip(d.dist, 4.7));
-  mount('chart-dist-sev', C.buildStrip(d.distSev, 5.2));
+  mount('chart-dist', C.buildViolin(d.dist));
+  mount('chart-dist-sev', C.buildViolin(d.distSev));
 
   // "나의 시급 비교" — 전국 + 지역별 (지역 점 필터 + 지역 평균을 입력으로 전달)
   mount('chart-my-all', C.buildMyScatter(pts, null, d.regression.wage));

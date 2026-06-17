@@ -22,6 +22,14 @@ def home(request):
     return _page(request, 'web/home.html', 'home')
 
 
+def compare(request):
+    return _page(request, 'web/compare.html', 'compare')
+
+
+def compare_result(request):
+    return _page(request, 'web/compare_result.html', 'compare')
+
+
 def fulltime(request):
     return _page(request, 'web/fulltime.html', 'fulltime')
 

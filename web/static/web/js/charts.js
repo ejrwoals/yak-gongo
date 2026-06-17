@@ -353,5 +353,164 @@ window.Charts = (() => {
     return svgRoot(W, H, e);
   }
 
-  return { buildHistogram, buildScatter, buildStrip, buildMyScatter, buildFullHistogram, buildFullScatter, buildDateScatter, buildBubble };
+  // ── 바이올린 공용 헬퍼 ───────────────────────────────────────────
+  // 히스토그램 → 가우시안 평활 밀도 (반폭 0~1로 정규화)
+  function densityProfile(vals, ymin, ymax) {
+    const bins = 44, hb = (ymax - ymin) / bins, c = new Array(bins).fill(0);
+    vals.forEach(v => { let b = Math.floor((v - ymin) / hb); b = Math.max(0, Math.min(bins - 1, b)); c[b]++; });
+    const sm = c.map((_, i) => { let s = 0, w = 0; for (let k = -4; k <= 4; k++) { const j = i + k; if (j < 0 || j >= bins) continue; const wk = Math.exp(-k * k / 6); s += c[j] * wk; w += wk; } return s / w; });
+    const mx = Math.max(...sm, 1e-9);
+    return sm.map((d, i) => ({ y: ymin + (i + 0.5) * hb, w: d / mx }));
+  }
+  const violinPoints = (cx, dens, hw, mapY) => dens.map(p => [cx + p.w * hw, mapY(p.y)])
+    .concat(dens.slice().reverse().map(p => [cx - p.w * hw, mapY(p.y)]))
+    .map(p => p.join(',')).join(' ');
+  // IQR 박스 + 중앙값 + 5~95% 수염
+  function boxOverlay(e, cx, vals, mapY, bw) {
+    const s = [...vals].sort((a, b) => a - b);
+    e.push(h('line', { x1: cx, y1: mapY(quantile(s, 0.95)), x2: cx, y2: mapY(quantile(s, 0.05)), stroke: '#6B7167', strokeWidth: 1.4 }));
+    e.push(h('rect', { x: cx - bw, y: mapY(quantile(s, 0.75)), width: bw * 2, height: mapY(quantile(s, 0.25)) - mapY(quantile(s, 0.75)), fill: '#FFFFFF', opacity: 0.9, stroke: '#6B7167', strokeWidth: 1.3, rx: 2 }));
+    e.push(h('line', { x1: cx - bw, y1: mapY(quantile(s, 0.5)), x2: cx + bw, y2: mapY(quantile(s, 0.5)), stroke: '#2A302A', strokeWidth: 2 }));
+  }
+  // 별표(흰 halo)
+  function starAt(e, cx, cy, rad) {
+    e.push(h('circle', { cx, cy, r: rad + 3, fill: '#fff', opacity: 0.95 }));
+    const sp = [];
+    for (let k = 0; k < 10; k++) { const ang = -Math.PI / 2 + k * Math.PI / 5; const rr = k % 2 === 0 ? rad : rad * 0.45; sp.push([cx + rr * Math.cos(ang), cy + rr * Math.sin(ang)]); }
+    e.push(h('polygon', { points: sp.map(p => p.join(',')).join(' '), fill: '#2438D8', stroke: '#fff', strokeWidth: 1.3 }));
+  }
+
+  // "내 시급 비교" 바이올린 + 박스 — groups [{label, mean, n, vals}], myWage(만원)
+  // 내 시급 아래는 초록으로 채워 '내가 이긴 비율'을 강조하고, 가로 점선 + 별표로 내 위치를 표시.
+  function buildCompare(groups, myWage) {
+    const W = 760, H = 470, L = 60, R = 28, T = 30, B = 70, pw = W - L - R, ph = H - T - B;
+    const all = groups.flatMap(g => g.vals).concat([myWage]);
+    let ymin = Math.min(...all), ymax = Math.max(...all);
+    const pad = (ymax - ymin) * 0.1 || 0.5; ymin -= pad; ymax += pad;
+    const mapY = y => T + (1 - ((y - ymin) / (ymax - ymin))) * ph;
+    const clampY = y => mapY(Math.max(ymin, Math.min(ymax, y)));
+    const colW = pw / groups.length;
+    const hw = Math.min(colW * 0.40, 130);
+    const myY = clampY(myWage);
+    const e = [];
+
+    e.push(h('defs', {}, h('clipPath', { id: 'cmp-below' }, h('rect', { x: L, y: myY, width: pw, height: T + ph - myY }))));
+    e.push(h('rect', { x: L, y: T, width: pw, height: ph, fill: '#F4F4F0' }));
+    ticks(Math.ceil(ymin * 2) / 2, Math.floor(ymax * 2) / 2, 0.5).forEach(v => {
+      const y = mapY(v);
+      e.push(h('line', { x1: L, y1: y, x2: L + pw, y2: y, stroke: '#E7E7E1' }));
+      e.push(h('text', { x: L - 8, y: y + 4, textAnchor: 'end', fontSize: 11, fill: '#9AA098' }, v.toFixed(1)));
+    });
+
+    const centers = [];
+    groups.forEach((g, i) => {
+      const cx = L + i * colW + colW / 2; centers.push(cx);
+      const pts = violinPoints(cx, densityProfile(g.vals, ymin, ymax), hw, mapY);
+      e.push(h('polygon', { points: pts, fill: '#DADCD5', stroke: '#C2C5BD', strokeWidth: 1 }));
+      e.push(h('polygon', { points: pts, fill: 'rgba(27,170,107,0.32)', clipPath: 'url(#cmp-below)' }));
+      boxOverlay(e, cx, g.vals, mapY, 13);
+
+      const my2 = mapY(g.mean), pillX = cx + 17, pillW = 42;
+      e.push(h('rect', { x: cx - 4, y: my2 - 4, width: 8, height: 8, fill: '#E23B2E' }));
+      e.push(h('rect', { x: pillX, y: my2 - 10, width: pillW, height: 20, rx: 6, fill: '#fff', stroke: '#F0C9C4' }));
+      e.push(h('text', { x: pillX + pillW / 2, y: my2 + 4, textAnchor: 'middle', fontSize: 12, fill: '#E23B2E', fontWeight: 700 }, g.mean.toFixed(2)));
+
+      e.push(h('text', { x: cx, y: T + ph + 18, textAnchor: 'middle', fontSize: 10.5, fill: '#9AA098' }, 'n = ' + g.n));
+      e.push(h('text', { x: cx, y: T + ph + 38, textAnchor: 'middle', fontSize: 12.5, fill: '#555', fontWeight: 700 }, g.label));
+    });
+
+    e.push(h('line', { x1: L, y1: myY, x2: L + pw, y2: myY, stroke: '#2438D8', strokeWidth: 2, strokeDasharray: '7 4', opacity: 0.85 }));
+    e.push(h('rect', { x: L + 4, y: myY - 19, width: 92, height: 17, rx: 5, fill: '#fff', opacity: 0.92, stroke: '#C9D0F2' }));
+    e.push(h('text', { x: L + 9, y: myY - 6, fontSize: 12, fill: '#2438D8', fontWeight: 700 }, '내 시급 ' + myWage.toFixed(2)));
+    centers.forEach(cx => starAt(e, cx, myY, 11));
+
+    e.push(h('text', { x: 15, y: T + ph / 2, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62', transform: 'rotate(-90 15 ' + (T + ph / 2) + ')' }, '시급 (단위 : 만 원)'));
+    return svgRoot(W, H, e);
+  }
+
+  // 지역별(또는 임의 그룹) 시급 분포 바이올린 + 박스 — groups [{nm, mn, n, vals}]
+  // opts: {ymin, ymax}(생략 시 자동), star:{region, y}(예시 별표), xLabel(기본 '지역 대분류')
+  function buildViolin(groups, opts) {
+    opts = opts || {};
+    const W = 960, H = 520, L = 60, R = 28, T = 30, B = 74, pw = W - L - R, ph = H - T - B;
+    const all = groups.flatMap(g => g.vals).concat(opts.star ? [opts.star.y] : []);
+    let ymin = opts.ymin != null ? opts.ymin : Math.min(...all);
+    let ymax = opts.ymax != null ? opts.ymax : Math.max(...all);
+    const span = (ymax - ymin) || 1;
+    if (opts.ymin == null) ymin -= span * 0.06;
+    if (opts.ymax == null) ymax += span * 0.06;
+    const mapY = y => T + (1 - ((y - ymin) / (ymax - ymin))) * ph;
+    const clampY = y => mapY(Math.max(ymin, Math.min(ymax, y)));
+    const colW = pw / groups.length;
+    const hw = Math.min(colW * 0.40, 135);
+    const e = [];
+    e.push(h('rect', { x: L, y: T, width: pw, height: ph, fill: '#ECECE9' }));
+    ticks(Math.ceil(ymin * 2) / 2, Math.floor(ymax * 2) / 2, 0.5).forEach(v => {
+      const y = mapY(v);
+      e.push(h('line', { x1: L, y1: y, x2: L + pw, y2: y, stroke: '#E0E0DB' }));
+      e.push(h('text', { x: L - 8, y: y + 4, textAnchor: 'end', fontSize: 11, fill: '#8A8A82' }, v.toFixed(1)));
+    });
+    groups.forEach((g, i) => {
+      const cx = L + i * colW + colW / 2;
+      e.push(h('polygon', { points: violinPoints(cx, densityProfile(g.vals, ymin, ymax), hw, mapY), fill: '#D8DAD3', stroke: '#C2C5BD', strokeWidth: 1 }));
+      boxOverlay(e, cx, g.vals, mapY, 13);
+      const my2 = mapY(g.mn), pillX = cx + 17, pillW = 44;
+      e.push(h('rect', { x: cx - 4, y: my2 - 4, width: 8, height: 8, fill: '#E23B2E' }));
+      e.push(h('rect', { x: pillX, y: my2 - 10, width: pillW, height: 20, rx: 6, fill: '#fff', stroke: '#F0C9C4' }));
+      e.push(h('text', { x: pillX + pillW / 2, y: my2 + 4, textAnchor: 'middle', fontSize: 12.5, fill: '#E23B2E', fontWeight: 700 }, g.mn.toFixed(2)));
+      e.push(h('text', { x: cx, y: T + ph + 20, textAnchor: 'middle', fontSize: 11, fill: '#8A8A82' }, 'n = ' + g.n));
+      e.push(h('text', { x: cx, y: T + ph + 40, textAnchor: 'middle', fontSize: 12.5, fill: '#555', fontWeight: 700 }, g.nm));
+    });
+    if (opts.star) {
+      const idx = groups.findIndex(g => g.nm === opts.star.region);
+      if (idx >= 0) starAt(e, L + idx * colW + colW / 2, clampY(opts.star.y), 12);
+    }
+    e.push(h('text', { x: L + pw / 2, y: H - 8, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62' }, opts.xLabel || '지역 대분류'));
+    e.push(h('text', { x: 15, y: T + ph / 2, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62', transform: 'rotate(-90 15 ' + (T + ph / 2) + ')' }, '시급 (단위 : 만 원)'));
+    return svgRoot(W, H, e);
+  }
+
+  // 근무시간 대비 시급 산점도 — pts [{x:시간, y:시급}], reg {slope, intercept}, my {x, y}(내 위치 별표)
+  // 회귀선(빨간선)은 그 근무시간대의 평균 시급. 별이 선보다 위면 시간 대비 시급이 높은 편.
+  function buildHoursScatter(pts, reg, my) {
+    const W = 760, H = 460, L = 60, R = 28, T = 30, B = 56, pw = W - L - R, ph = H - T - B;
+    const xs = pts.map(p => p.x).concat(my ? [my.x] : []);
+    const ys = pts.map(p => p.y).concat(my ? [my.y] : []);
+    let xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
+    const xpad = (xmax - xmin) * 0.06 || 1, ypad = (ymax - ymin) * 0.08 || 0.5;
+    xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad;
+    const mapX = x => L + ((x - xmin) / (xmax - xmin)) * pw;
+    const mapY = y => T + (1 - ((y - ymin) / (ymax - ymin))) * ph;
+    const clampY = y => mapY(Math.max(ymin, Math.min(ymax, y)));
+    const e = [];
+    e.push(h('rect', { x: L, y: T, width: pw, height: ph, fill: '#ECECE9' }));
+    // x 눈금 (약 8개, 정수 간격)
+    const xstep = Math.max(1, Math.round((xmax - xmin) / 8));
+    for (let xv = Math.ceil(xmin / xstep) * xstep; xv <= xmax; xv += xstep) {
+      const x = mapX(xv);
+      e.push(h('line', { x1: x, y1: T, x2: x, y2: T + ph, stroke: '#E0E0DB' }));
+      e.push(h('text', { x, y: T + ph + 15, textAnchor: 'middle', fontSize: 10, fill: '#8A8A82' }, String(xv)));
+    }
+    ticks(Math.ceil(ymin * 2) / 2, Math.floor(ymax * 2) / 2, 0.5).forEach(v => {
+      const y = mapY(v);
+      e.push(h('line', { x1: L, y1: y, x2: L + pw, y2: y, stroke: '#E0E0DB' }));
+      e.push(h('text', { x: L - 8, y: y + 4, textAnchor: 'end', fontSize: 11, fill: '#8A8A82' }, v.toFixed(1)));
+    });
+    pts.forEach(p => e.push(h('circle', { cx: mapX(p.x), cy: clampY(p.y), r: 2.6, fill: 'rgba(55,55,55,0.34)' })));
+    // 회귀선 + 밴드 (데이터 x 범위)
+    if (reg) {
+      const dxmin = Math.min(...pts.map(p => p.x)), dxmax = Math.max(...pts.map(p => p.x));
+      const regY = x => reg.slope * x + reg.intercept, band = 0.11, top = [], bot = [];
+      for (let x = dxmin; x <= dxmax; x += (dxmax - dxmin) / 24 || 1) { top.push([mapX(x), clampY(regY(x) + band)]); bot.push([mapX(x), clampY(regY(x) - band)]); }
+      e.push(h('polygon', { points: top.concat(bot.reverse()).map(p => p.join(',')).join(' '), fill: 'rgba(226,59,46,0.13)' }));
+      e.push(h('line', { x1: mapX(dxmin), y1: clampY(regY(dxmin)), x2: mapX(dxmax), y2: clampY(regY(dxmax)), stroke: '#E23B2E', strokeWidth: 3, strokeLinecap: 'round' }));
+      e.push(h('text', { x: L + pw - 12, y: T + 22, textAnchor: 'end', fontSize: 12.5, fill: '#E23B2E', fontWeight: 600 }, '회귀선 = 시간대별 평균 시급'));
+    }
+    if (my) starAt(e, mapX(my.x), clampY(my.y), 12);
+    e.push(h('text', { x: L + pw / 2, y: H - 6, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62' }, '주당 근무 시간 (단위 : 시간)'));
+    e.push(h('text', { x: 15, y: T + ph / 2, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62', transform: 'rotate(-90 15 ' + (T + ph / 2) + ')' }, '시급 (단위 : 만 원)'));
+    return svgRoot(W, H, e);
+  }
+
+  return { buildHistogram, buildScatter, buildStrip, buildMyScatter, buildFullHistogram, buildFullScatter, buildDateScatter, buildBubble, buildCompare, buildViolin, buildHoursScatter };
 })();
