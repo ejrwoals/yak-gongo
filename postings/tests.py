@@ -1,8 +1,32 @@
 from django.test import TestCase
 
 from pipeline.salary import calculate_net_salary, ceil_hourly_wage
+from pipeline.validator import error_check
 from postings import review_agent as ra
 from postings.models import JobPosting
+
+
+class ErrorCheckWorkdaysTests(TestCase):
+    """음수 근무일은 명시적 에러, 소수점(격주)은 에러가 아니어야 한다."""
+
+    BASE = {
+        '일회성 근무 여부': False, '급여 유형': 'monthly', '급여': 300,
+        '평일 출근 시각': 9, '평일 퇴근 시각': 18,
+        '주말 근무 일수': 0, '주말 출근 시각': None, '주말 퇴근 시각': None,
+    }
+
+    def test_negative_weekday_days_is_error(self):
+        history, _, _ = error_check({**self.BASE, '평일 근무 일수': -2})
+        self.assertIn('음수', history)
+
+    def test_negative_weekend_days_is_error(self):
+        history, _, _ = error_check({**self.BASE, '평일 근무 일수': 5, '주말 근무 일수': -1})
+        self.assertIn('음수', history)
+
+    def test_fractional_weekday_days_not_error(self):
+        # 격주 평일 근무(0.5일)는 정상 표현 → 음수 에러로 잡히면 안 된다.
+        history, _, _ = error_check({**self.BASE, '평일 근무 일수': 0.5, '급여': 100})
+        self.assertNotIn('음수', history)
 
 
 class AgentEditableFieldsTests(TestCase):

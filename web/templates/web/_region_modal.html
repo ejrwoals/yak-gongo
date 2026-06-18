@@ -1,0 +1,68 @@
+<!-- 지역 분류 기준 모달 (공용 partial — home / compare 등에서 include)
+     필요한 것: .modal-overlay/.modal-dialog/.modal-close CSS, korea-regions.js, region-map.js, region-modal.js,
+     그리고 모달을 여는 트리거 요소 id="region-modal-open". -->
+<div id="region-modal" class="modal-overlay" hidden>
+  <div class="modal-dialog" style="max-width:680px;">
+    <button id="region-modal-close" class="modal-close" aria-label="닫기">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 style="margin:0 0 4px; font-size:20px; font-weight:800; letter-spacing:-0.5px;">지역 분류 기준</h2>
+    <p style="margin:0 0 20px; font-size:13px; font-weight:600; color:#9AA098;">공고 지역은 크게 5개 대분류로 나누어 통계를 산출했습니다.</p>
+
+    <p style="margin:0 0 16px; font-size:14px; line-height:1.75; color:#3A4138;">
+      지역은 크게 <b style="color:#2A302A;">서울 &middot; 인천 &middot; 경기 중부 &middot; 경기 외곽 &middot; 지방</b>으로 분류했습니다.
+      보통 서울에서 멀어질수록 근무 약사의 페이가 증가한다는 인식이 있는데, 정말 그런지 보기 위해 서울에서 멀어지는 방향으로 지역을 세분화했습니다.
+    </p>
+
+    <!-- 색상 범례 -->
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#B0203A;"></span>서울</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#E8843C;"></span>인천</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#E9CE54;"></span>경기 중부</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#6FB7E0;"></span>경기 외곽</span>
+      <span style="display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#3A4138; background:#F6F6F3; border:1px solid #ECECE4; border-radius:999px; padding:6px 13px;"><span style="width:11px; height:11px; border-radius:50%; background:#2E3E8F;"></span>지방</span>
+    </div>
+
+    <!-- 지도 -->
+    <div style="display:flex; gap:14px; align-items:stretch; margin-bottom:20px; flex-wrap:wrap;">
+      <figure style="flex:2 1 320px; margin:0; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:10px 12px;">
+        <figcaption style="font-size:12.5px; font-weight:700; color:#3A4138; margin-bottom:6px;">수도권 확대</figcaption>
+        <div id="region-map-capital"></div>
+      </figure>
+      <figure style="flex:1 1 180px; margin:0; background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column;">
+        <figcaption style="font-size:12.5px; font-weight:700; color:#3A4138; margin-bottom:6px;">전국 (<span style="color:#2E3E8F;">지방</span> = 그 외 전 지역)</figcaption>
+        <div id="region-map-nation" style="flex:1; display:flex; align-items:center;"></div>
+      </figure>
+    </div>
+
+    <p style="margin:0 0 16px; font-size:14px; line-height:1.75; color:#3A4138;">
+      <b style="color:#2A302A;">경기도</b>는 서울에 상대적으로 인접한 <b style="color:#A6711A;">경기 중부</b>, 바깥쪽의 <b style="color:#2E6FB0;">경기 외곽</b>으로 나누었습니다.
+      <span style="color:#9AA098; font-weight:600;">(공식적인 분류는 아니고 주관성이 들어간 분류입니다.)</span>
+    </p>
+
+    <!-- 경기 중부 -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:16px 18px; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <span style="width:10px; height:10px; border-radius:50%; background:#E9CE54;"></span>
+        <span style="font-size:14px; font-weight:800; color:#2A302A;">경기 중부</span>
+      </div>
+      <p style="margin:0; font-size:13.5px; line-height:1.7; color:#5C635A;">김포, 고양, 양주, 의정부, 남양주, 구리, 하남, 경기도광주, 성남, 과천, 의왕, 안양, 군포, 광명, 시흥, 부천</p>
+    </div>
+
+    <!-- 경기 외곽 -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:12px; padding:16px 18px; margin-bottom:18px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+        <span style="width:10px; height:10px; border-radius:50%; background:#6FB7E0;"></span>
+        <span style="font-size:14px; font-weight:800; color:#2A302A;">경기 외곽</span>
+      </div>
+      <p style="margin:0; font-size:13.5px; line-height:1.7; color:#5C635A;">파주, 동두천, 연천, 포천, 가평, 양평, 여주, 이천, 안성, 용인, 평택, 오산, 화성, 수원, 안산</p>
+    </div>
+
+    <div style="background:#F6F6F3; border-radius:10px; padding:14px 16px;">
+      <p style="margin:0; font-size:12.5px; line-height:1.7; color:#828A80;">
+        &lowast; '도'나 '시' 단위까지 더 자세하게 세분화하여 통계를 낸다면 더 좋겠지만, 각 도시별로 세분화하면 표본 수가 너무 작아져 통계 신뢰도가 낮아지는 문제가 있습니다.
+        표본 수가 더 늘어난다면 추후 도시별 평균 시급도 계산해볼 수 있을 것 같습니다.
+      </p>
+    </div>
+  </div>
+</div>

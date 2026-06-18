@@ -30,6 +30,15 @@ def compare_result(request):
     return _page(request, 'web/compare_result.html', 'compare')
 
 
+def method(request):
+    """데이터 처리 방법(시급 산출·수집 파이프라인) 안내 페이지."""
+    snap = _latest_snapshot()
+    return render(request, 'web/method.html', {
+        'postingCount': (snap.posting_count if snap else None),
+        'lastUpdate': (timezone.localtime(snap.created_at).strftime('%Y-%m-%d') if snap else None),
+    })
+
+
 def fulltime(request):
     return _page(request, 'web/fulltime.html', 'fulltime')
 

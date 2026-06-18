@@ -97,6 +97,14 @@ def error_check(d: dict, error_history: str = '') -> tuple[str, float | None, fl
         d['주말 퇴근 시각'] = None
 
     total_days = d['평일 근무 일수'] + d['주말 근무 일수']
+
+    # 음수 근무일은 물리적으로 불가능 → 명시적 에러.
+    # (소수점은 격주 근무 등 정상 표현이므로 에러가 아니라 리뷰 대시보드의 outlier로만 본다.)
+    if d['평일 근무 일수'] < 0 or d['주말 근무 일수'] < 0:
+        msg = f'[ ERROR ] 평일/주말 근무 일수가 음수입니다 (평일 {d["평일 근무 일수"]}, 주말 {d["주말 근무 일수"]}).'
+        error_history = error_message(msg, error_history)
+        return error_history, total_work_hours_per_week, hourly_wage
+
     if total_days == 0:
         msg = '[ ERROR ] 평일/주말 근무 일수가 모두 0입니다.'
         error_history = error_message(msg, error_history)

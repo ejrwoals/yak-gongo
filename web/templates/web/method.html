@@ -1,0 +1,169 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>데이터 처리 방법 — 약사 시급 리포트</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+<style>
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  .formula { border-left:3px solid #2A302A; padding:4px 0 4px 16px; margin:14px 0; font-size:15.5px; color:#2A302A; line-height:1.7; }
+  .hl { color:#0F7A4C; font-weight:800; }
+  .modal-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(20,28,22,0.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .modal-overlay[hidden] { display: none; }
+  .modal-dialog { position: relative; background: #fff; border-radius: 18px; width: 100%; max-width: 920px; max-height: 88vh; overflow-y: auto; padding: 30px 34px 36px; box-shadow: 0 20px 60px rgba(0,0,0,0.28); }
+  .modal-close { position: absolute; top: 16px; right: 18px; width: 34px; height: 34px; border-radius: 10px; background: #F1F1EE; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+  .modal-close:hover { background: #E7E7E1; }
+</style>
+</head>
+<body>
+<div style="min-height:100vh; width:100%; background:#FBFBF8; color:#1E2420; font-family:'Pretendard Variable',Pretendard,system-ui,sans-serif;">
+
+  <!-- ===== TOP NAV ===== -->
+  <header style="position:sticky; top:0; z-index:30; height:62px; background:rgba(251,251,248,0.88); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid #EDEDE7;">
+    <div style="max-width:1160px; height:100%; margin:0 auto; padding:0 40px; display:flex; align-items:center; justify-content:space-between;">
+      <div style="display:flex; align-items:center; gap:34px;">
+        <a href="{% url 'web:home' %}" style="display:flex; align-items:center; gap:11px; text-decoration:none; color:inherit;">
+          <div style="width:34px; height:34px; border-radius:10px; background:linear-gradient(150deg,#1BAA6B,#0F7A4C); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(15,122,76,0.26);">
+            <span style="font-size:17px; font-weight:800; color:#fff; letter-spacing:-1px;">약</span>
+          </div>
+          <span style="font-size:16px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">약사 시급 리포트</span>
+        </a>
+        <nav style="display:flex; align-items:center; gap:4px;">
+          <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">홈</a>
+          <a href="{% url 'web:compare' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">내 시급 비교</a>
+          <a href="{% url 'web:method' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">데이터 처리 방법</a>
+          <a id="region-modal-open" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none; cursor:pointer;">지역 분류 기준</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width:880px; margin:0 auto; padding:42px 40px 90px;">
+
+    <h1 style="margin:0 0 10px; font-size:28px; font-weight:800; letter-spacing:-1px;">데이터 처리 방법</h1>
+    <p style="max-width:720px; margin:0 0 12px; font-size:15.5px; line-height:1.85; color:#5C635A; letter-spacing:-0.2px;">
+      이 리포트의 시급 통계가 <b style="color:#2A302A;">어떻게 수집되고 계산되는지</b> 정리했습니다. 공고를 어떻게 수집·검증하는지(수집 파이프라인), 그리고 시급·월급·근무시간을 어떻게 산출하는지 설명합니다.
+    </p>
+    {% if postingCount %}
+    <p style="margin:0 0 30px; font-size:13.5px; font-weight:700; color:#0F7A4C; background:#E4F4EB; display:inline-block; padding:7px 14px; border-radius:999px;">현재까지 {{ postingCount }}개 공고를 이 방식으로 분석했습니다 · Last Update {{ lastUpdate }}</p>
+    {% endif %}
+
+    <!-- ========== 1. 데이터 수집 파이프라인 ========== -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:16px; padding:28px 30px; box-shadow:0 6px 20px rgba(30,40,30,0.05); margin-bottom:24px;">
+      <div style="display:flex; align-items:center; gap:11px; margin-bottom:16px;">
+        <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:#EAF6F0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F7A4C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>
+        <h2 style="margin:0; font-size:19px; font-weight:800; letter-spacing:-0.5px;">데이터 수집 파이프라인</h2>
+      </div>
+
+      <p style="margin:0 0 16px; font-size:15.5px; line-height:1.85; color:#3A4138;">
+        팜리크루트와 약문약답에 올라온 공고 글을 <span style="background:#F0F0EA; border-radius:3px; padding:0 4px;">사람이 하나하나 읽고</span> 시급을 계산해 기록할 수도 있지만, 이 프로젝트에서는 <b style="color:#B5532A;">Google Gemini 같은 LLM</b>(Large Language Model)을 활용해 이 과정을 <b style="color:#B5532A;">자동화</b>했습니다.
+      </p>
+
+      <ol style="margin:0 0 26px; padding-left:20px; display:flex; flex-direction:column; gap:11px; font-size:15px; line-height:1.7; color:#3A4138;">
+        <li>약문약답·팜리크루트의 공고 글 text를 <b>웹 스크레이핑</b>으로 수집합니다.</li>
+        <li><b>Gemini</b>에 넣어 급여·일회성 여부·출퇴근 시각·근무 요일·지역 등을 <b>정해진 형식(JSON)으로 추출</b>합니다. <span style="color:#7A8077;">(급여 정보가 없는 공고는 시급 산출에서 제외)</span></li>
+        <li>추출값을 <b>자동 검증</b>합니다 — 시급 범위, 주당 근무시간, 근무일수 등이 상식적인지 확인하고 <b>이상치·에러를 표시</b>합니다.</li>
+        <li>이상치·에러가 표시된 공고는 <b>검토</b>를 거칩니다: ① <b>LLM 자동 검토</b>(Gemini가 원문과 DB 값을 다시 대조) ② <b>대화형 agent 검토</b>(Gemini가 수정안을 제안하면 사람이 승인) ③ <b>관리자 직접 검토</b>.</li>
+        <li>검토를 통과한 공고를 <b>데이터베이스</b>에 적재하고, <b>이 웹사이트가 그 데이터를 읽어</b> 통계를 보여줍니다.</li>
+      </ol>
+
+      <!-- 플로우차트 -->
+      <figure style="margin:0; background:#FBFBF8; border:1px solid #EFEFE8; border-radius:14px; padding:18px 16px 8px;">
+        <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:6px;">공고 처리 흐름</figcaption>
+        <svg viewBox="0 0 700 542" width="100%" style="display:block; max-width:640px; margin:0 auto;" font-family="Pretendard Variable, Pretendard, sans-serif">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9AA098"/></marker>
+          </defs>
+          <!-- connectors -->
+          <g fill="none" stroke="#9AA098" stroke-width="2" marker-end="url(#ar)">
+            <path d="M170,64 L170,124"/>
+            <path d="M260,150 L460,150"/>
+            <path d="M170,176 L170,236"/>
+            <path d="M170,290 L170,494 L190,494"/>
+            <path d="M270,263 L500,263 L500,358"/>
+            <path d="M500,412 L500,494 L410,494"/>
+          </g>
+          <!-- connector labels -->
+          <g font-size="11.5" font-weight="600" fill="#7A8077">
+            <text x="178" y="98">공고 text 추출</text>
+            <text x="360" y="142" text-anchor="middle">급여 정보 없음</text>
+            <text x="178" y="210">JSON 추출</text>
+            <text x="178" y="364">정상</text>
+            <text x="382" y="255" text-anchor="middle">이상치·에러</text>
+            <text x="508" y="458">교정</text>
+          </g>
+          <!-- nodes -->
+          <g>
+            <rect x="95" y="16" width="150" height="48" rx="11" fill="#fff" stroke="#DADAD2" stroke-width="1.5"/>
+            <text x="170" y="45" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2A302A">약국 구인 공고</text>
+
+            <rect x="80" y="124" width="180" height="52" rx="11" fill="#fff" stroke="#DADAD2" stroke-width="1.5"/>
+            <text x="170" y="146" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2A302A">Gemini LLM 추출</text>
+            <text x="170" y="164" text-anchor="middle" font-size="10.5" font-weight="600" fill="#7A8077">(정해진 형식 · JSON)</text>
+
+            <rect x="460" y="124" width="150" height="52" rx="11" fill="#F4F4F0" stroke="#DADAD2" stroke-width="1.5"/>
+            <text x="535" y="146" text-anchor="middle" font-size="13" font-weight="700" fill="#828A80">시급 산출 제외</text>
+            <text x="535" y="164" text-anchor="middle" font-size="10.5" font-weight="600" fill="#9AA098">(급여 정보 없음)</text>
+
+            <rect x="70" y="236" width="200" height="54" rx="11" fill="#fff" stroke="#DADAD2" stroke-width="1.5"/>
+            <text x="170" y="259" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2A302A">자동 검증</text>
+            <text x="170" y="277" text-anchor="middle" font-size="10.5" font-weight="600" fill="#7A8077">(타당성 · 이상치 체크)</text>
+
+            <rect x="405" y="358" width="190" height="54" rx="11" fill="#fff" stroke="#DADAD2" stroke-width="1.5"/>
+            <text x="500" y="381" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2A302A">검토</text>
+            <text x="500" y="399" text-anchor="middle" font-size="10.5" font-weight="600" fill="#7A8077">(LLM 자동 · agent · 관리자)</text>
+
+            <rect x="190" y="468" width="220" height="52" rx="11" fill="#EAF6F0" stroke="#1BAA6B" stroke-width="1.8"/>
+            <text x="300" y="499" text-anchor="middle" font-size="14" font-weight="800" fill="#0F7A4C">최종 데이터베이스</text>
+          </g>
+        </svg>
+      </figure>
+    </div>
+
+    <!-- ========== 2. 시급 ↔ 월급 환산 ========== -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:16px; padding:28px 30px; box-shadow:0 6px 20px rgba(30,40,30,0.05); margin-bottom:24px;">
+      <div style="display:flex; align-items:center; gap:11px; margin-bottom:16px;">
+        <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:#EAF6F0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F7A4C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>
+        <h2 style="margin:0; font-size:19px; font-weight:800; letter-spacing:-0.5px;">시급 &harr; 월급 환산</h2>
+      </div>
+
+      <p style="margin:0 0 6px; font-size:15.5px; line-height:1.85; color:#3A4138;">1년(365일)을 12로 나누면 <span class="hl">한 달 = 30.41일</span>,</p>
+      <p style="margin:0 0 18px; font-size:15.5px; line-height:1.85; color:#3A4138; padding-left:20px;">&rarr; 30.41일을 7로 나누면 <span class="hl">한 달 = 4.34주</span> 입니다.</p>
+
+      <p style="margin:0 0 2px; font-size:15.5px; line-height:1.85; color:#3A4138;">따라서 시급이 <b>3만원</b>이고 주당 <b>10시간</b> 근무하면 월급은:</p>
+      <div class="formula">3만원 &times; 주당 10시간 &times; <span class="hl">4.34주</span> = 월급 <b>130.2만원</b></div>
+
+      <p style="margin:14px 0 2px; font-size:15.5px; line-height:1.85; color:#3A4138;">반대로 월급이 <b>500만원</b>이고 주당 <b>45시간</b> 근무하면 시급은:</p>
+      <div class="formula">500만원 &divide; <span class="hl">4.34주</span> &divide; 주당 45시간 = 시급 <b>2.56만원</b></div>
+    </div>
+
+    <!-- ========== 3. 주당 근무시간 산정 ========== -->
+    <div style="background:#fff; border:1px solid #ECECE4; border-radius:16px; padding:28px 30px; box-shadow:0 6px 20px rgba(30,40,30,0.05);">
+      <div style="display:flex; align-items:center; gap:11px; margin-bottom:16px;">
+        <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px; background:#EAF6F0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F7A4C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>
+        <h2 style="margin:0; font-size:19px; font-weight:800; letter-spacing:-0.5px;">주당 근무시간 산정</h2>
+      </div>
+
+      <p style="margin:0 0 14px; font-size:15.5px; line-height:1.85; color:#3A4138;">
+        대부분의 약국 공고는 매주 출퇴근 시각이 일정하므로 <span style="text-decoration:underline; text-underline-offset:3px;">주당 근무시간도 일정</span>합니다. 주당 근무시간은 <b>(퇴근 &minus; 출근) &times; 근무일수</b>를 평일·주말 각각 더해서 구합니다.
+      </p>
+      <p style="margin:0 0 14px; font-size:15.5px; line-height:1.85; color:#3A4138;">
+        간혹 주마다 출퇴근 시간이 달라지는 경우에는 <b>평균적인 주당 근무시간</b>으로 처리했습니다.
+      </p>
+      <p style="margin:0; font-size:15.5px; line-height:1.85; color:#3A4138;">
+        <b style="color:#B5532A;">격주</b> 토요일 근무처럼 매주 출근하지 않는 경우에도 평균으로 환산합니다. 예를 들어 <span style="background:#F0F0EA; border-radius:3px; padding:0 4px;">격주 수요일 10시간</span> 근무라면 10시간 &times; <b style="color:#E23B2E;">0.5</b> = 평균 주 <b>5시간</b> 근무로 처리합니다.
+      </p>
+    </div>
+
+  </main>
+</div>
+{% include 'web/_region_modal.html' %}
+<script src="{% static 'web/js/korea-regions.js' %}"></script>
+<script src="{% static 'web/js/region-map.js' %}"></script>
+<script src="{% static 'web/js/region-modal.js' %}"></script>
+</body>
+</html>

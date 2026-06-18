@@ -37,7 +37,7 @@
         <nav style="display:flex; align-items:center; gap:4px;">
           <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
           <a href="{% url 'web:compare' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">내 시급 비교</a>
-          <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">공고 분석</a>
+          <a href="{% url 'web:method' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">데이터 처리 방법</a>
           <a id="region-modal-open" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none; cursor:pointer;">지역 분류 기준</a>
         </nav>
       </div>

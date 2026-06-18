@@ -12,6 +12,11 @@
   button { font-family: inherit; cursor: pointer; border: none; background: none; }
   a.recalc { transition:background .15s, box-shadow .15s; }
   a.recalc:hover { background:#F6F6F3; box-shadow:0 4px 12px rgba(30,40,30,0.08); }
+  .modal-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(20,28,22,0.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .modal-overlay[hidden] { display: none; }
+  .modal-dialog { position: relative; background: #fff; border-radius: 18px; width: 100%; max-width: 920px; max-height: 88vh; overflow-y: auto; padding: 30px 34px 36px; box-shadow: 0 20px 60px rgba(0,0,0,0.28); }
+  .modal-close { position: absolute; top: 16px; right: 18px; width: 34px; height: 34px; border-radius: 10px; background: #F1F1EE; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+  .modal-close:hover { background: #E7E7E1; }
 </style>
 </head>
 <body>
@@ -30,8 +35,8 @@
         <nav style="display:flex; align-items:center; gap:4px;">
           <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">홈</a>
           <a href="{% url 'web:compare' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">내 시급 비교</a>
-          <a style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">공고 분석</a>
-          <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">지역 분류 기준</a>
+          <a href="{% url 'web:method' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none;">데이터 처리 방법</a>
+          <a id="region-modal-open" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none; cursor:pointer;">지역 분류 기준</a>
         </nav>
       </div>
     </div>
@@ -112,8 +117,12 @@
 
   </main>
 </div>
+{% include 'web/_region_modal.html' %}
 {{ dashboard|json_script:"dashboard-data" }}
 <script src="{% static 'web/js/charts.js' %}"></script>
 <script src="{% static 'web/js/compare_result.js' %}"></script>
+<script src="{% static 'web/js/korea-regions.js' %}"></script>
+<script src="{% static 'web/js/region-map.js' %}"></script>
+<script src="{% static 'web/js/region-modal.js' %}"></script>
 </body>
 </html>

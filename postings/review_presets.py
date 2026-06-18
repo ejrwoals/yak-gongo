@@ -90,7 +90,7 @@ REVIEW_PRESETS = OrderedDict([
     # ── 2단계: outlier 검토 ──
     ('workdays_outlier', {
         'label': '근무일 이상치',
-        'description': '평일 근무일 <0 또는 >5 또는 소수점, 주말 근무일이 0/0.5/1/2 외의 값인 공고. 총 근무일 기준 정렬로 이상치 탐색.',
+        'description': '평일 근무일이 소수점(비정수)이거나 주말 근무일이 0.5/1/2 외의 값인 공고. 음수·초과(평일>5)는 validator 에러로 분리된다. 총 근무일 기준 정렬로 탐색.',
         'group': '2단계: outlier 검토',
         'verify_focus': '특히 평일/주말 근무 일수가 본문과 정확히 일치하는지 집중 검토하세요. 출퇴근 시각도 함께 확인.',
         'columns': ['title', 'pharmacy_name', 'weekday_work_days', 'weekend_work_days',
@@ -199,8 +199,9 @@ def get_preset_queryset(preset_key, base_qs):
         qs = qs.filter(has_error=True, admin_check__isnull=True)
 
     elif preset_key == 'workdays_outlier':
+        # 음수·초과(평일>5, 주말>2)는 validator가 에러(has_error=True)로 잡아 _STEP3_BASE에서 이미 제외된다.
+        # 여기서는 에러가 아닌 '비표준 소수점' 근무일(격주 등)만 사람 검토 대상으로 띄운다.
         qs = qs.filter(**_STEP3_BASE).filter(
-            Q(weekday_work_days__lt=0) | Q(weekday_work_days__gt=5) |
             Q(weekday_work_days__isnull=False) & ~Q(weekday_work_days=Floor('weekday_work_days')) |
             Q(weekend_work_days__isnull=False,
               weekend_work_days__gt=0) &

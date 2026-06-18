@@ -8,6 +8,7 @@ urlpatterns = [
     path('', views.home, name='home'),
     path('compare/', views.compare, name='compare'),
     path('compare/result/', views.compare_result, name='compare_result'),
+    path('method/', views.method, name='method'),
     path('fulltime/', views.fulltime, name='fulltime'),
     path('weekend/', views.weekend, name='weekend'),
     path('etc/', views.etc, name='etc'),
