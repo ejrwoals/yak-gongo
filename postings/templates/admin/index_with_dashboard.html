@@ -1,0 +1,26 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+<div class="module dashboard-entry">
+  <h2>공고 리뷰</h2>
+  <a href="{% url 'admin:jobposting_review' %}" class="dashboard-entry-btn">
+    📋 공고 리뷰 대시보드 열기
+  </a>
+</div>
+
+<style>
+  .dashboard-entry { margin-bottom: 20px; }
+  .dashboard-entry h2 { margin: 0; }
+  a.dashboard-entry-btn,
+  a.dashboard-entry-btn:link,
+  a.dashboard-entry-btn:visited {
+    display: inline-block; margin: 12px; padding: 10px 22px;
+    background: #417690; color: #fff; border-radius: 5px;
+    font-size: 14px; font-weight: 600; text-decoration: none;
+  }
+  a.dashboard-entry-btn:hover,
+  a.dashboard-entry-btn:focus { background: #356179; color: #fff; }
+</style>
+
+{{ block.super }}
+{% endblock %}

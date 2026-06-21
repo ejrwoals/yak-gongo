@@ -31,6 +31,9 @@
       <span class="badge" id="count-{{ key }}">-</span>
     </button>
     {% endfor %}
+    {% if group_name == '최종 점검' %}
+    <a href="{% url 'admin:dashboardsnapshot_update' %}" class="dashboard-update-btn">대시보드 업데이트</a>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
@@ -99,6 +102,15 @@
     background: #ddd; border-radius: 10px; font-size: 11px; text-align: center;
   }
   .preset-btn.active .badge { background: rgba(255,255,255,0.3); }
+  a.dashboard-update-btn,
+  a.dashboard-update-btn:link,
+  a.dashboard-update-btn:visited {
+    padding: 6px 14px; border: 1px solid #28a745; background: #28a745; color: #fff;
+    border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;
+    text-decoration: none; margin-left: 8px;
+  }
+  a.dashboard-update-btn:hover,
+  a.dashboard-update-btn:focus { background: #218838; border-color: #218838; color: #fff; }
 
   /* pre-단계 탭/패널 */
   #prestage-tabs { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 2px dashed #d9d9d9; }

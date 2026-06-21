@@ -3,7 +3,6 @@ import threading
 
 import django.db
 from django.contrib import admin
-from django.core.management import call_command
 from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
@@ -32,13 +31,15 @@ from .review_presets import (
     get_sort_expression,
 )
 
+# admin 홈에 '공고 리뷰 대시보드' 진입점을 추가한 커스텀 index 템플릿
+admin.site.index_template = 'admin/index_with_dashboard.html'
+
 # run_id → threading.Event 매핑 (카카오 로그인 대기용)
 _login_events: dict[int, threading.Event] = {}
 
 
 @admin.register(JobPosting)
 class JobPostingAdmin(admin.ModelAdmin):
-    change_list_template = 'admin/postings/jobposting/change_list.html'
     change_form_template = 'admin/postings/jobposting/change_form.html'
 
     list_display = (
@@ -694,32 +695,14 @@ class PipelineRunAdmin(admin.ModelAdmin):
     ordering = ('-started_at',)
     readonly_fields = ('started_at',)
 
-    change_list_template = 'admin/postings/pipelinerun/change_list.html'
-
     def get_urls(self):
         urls = super().get_urls()
         custom = [
-            path('run-statistics/', self.admin_site.admin_view(self.run_statistics_view), name='pipelinerun_run_statistics'),
             path('log/<int:run_id>/', self.admin_site.admin_view(self.run_log_view), name='pipelinerun_log'),
             path('status/<int:run_id>/', self.admin_site.admin_view(self.run_status_view), name='pipelinerun_status'),
             path('confirm-login/<int:run_id>/', self.admin_site.admin_view(self.confirm_login_view), name='pipelinerun_confirm_login'),
         ]
         return custom + urls
-
-    def run_statistics_view(self, request):
-        """백그라운드에서 run_statistics 실행 후 목록으로 복귀."""
-        def _target():
-            django.db.close_old_connections()
-            try:
-                call_command('run_statistics')
-            except Exception:
-                pass
-            finally:
-                django.db.close_old_connections()
-
-        threading.Thread(target=_target, daemon=True).start()
-        self.message_user(request, '통계 생성을 백그라운드에서 시작했습니다. 잠시 후 Notion 페이지를 확인하세요.')
-        return redirect('../')
 
     def run_log_view(self, request, run_id):
         """실행 로그 확인 페이지."""
@@ -827,8 +810,6 @@ class DashboardSnapshotAdmin(admin.ModelAdmin):
     list_display = ('created_at', 'posting_count')
     ordering = ('-created_at',)
     readonly_fields = ('created_at', 'posting_count', 'data')
-
-    change_list_template = 'admin/postings/dashboardsnapshot/change_list.html'
 
     def get_urls(self):
         urls = super().get_urls()
