@@ -42,6 +42,7 @@ def scrape(
     existing_urls: set[str] | None = None,
     category_limit: int | None = None,
     log=None,
+    on_item=None,
 ) -> list[dict]:
     """
     팜리크루트 공고를 순회하여 raw posting dict 리스트를 반환.
@@ -53,6 +54,7 @@ def scrape(
         category_limit:  이 카테고리에서 수집할 최대 공고 수 (None = 전체)
                          내부적으로 도시 수로 나눠 균등 분배.
         year:            등록일 연도 (팜리크루트는 월/일만 표시되므로 별도 지정 필요)
+        on_item:         공고 1건을 수집할 때마다 호출되는 콜백(dict). 중간 저장용.
 
     Returns:
         list of dict with keys:
@@ -111,6 +113,7 @@ def scrape(
 
                             cur_url = driver.current_url
                             if cur_url in existing_urls:
+                                _log(f'  {city} - {n}번 글 중복 스킵 | {cur_url}')
                                 driver.back()
                                 driver.implicitly_wait(5)
                                 found_on_page += 1
@@ -149,7 +152,7 @@ def scrape(
 
                             body = f'공고제목 :{title}\n{body_text}'
 
-                            results.append({
+                            record = {
                                 'url': cur_url,
                                 'platform': PLATFORM,
                                 'created_at': created_at,
@@ -158,7 +161,10 @@ def scrape(
                                 'body': body,
                                 'city': city,
                                 'big_category': big_category,
-                            })
+                            }
+                            if on_item is not None:
+                                on_item(record)
+                            results.append(record)
                             city_collected += 1
                             found_on_page += 1
                             _log(f'  {city} - {n}번 글 수집 완료 ({city_collected}/{city_limit or "∞"}) | {title} | {name} | {cur_url}')

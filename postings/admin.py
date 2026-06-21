@@ -7,7 +7,7 @@ from django.core.management import call_command
 from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
-from django.urls import path
+from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilder
@@ -21,6 +21,7 @@ from .models import (
     DashboardSnapshot,
     JobPosting,
     PipelineRun,
+    RawPosting,
 )
 from .review_presets import (
     FIELD_META,
@@ -137,6 +138,15 @@ class JobPostingAdmin(admin.ModelAdmin):
                  name='jobposting_review_mark'),
             path('review/counts/', self.admin_site.admin_view(self.review_counts_view),
                  name='jobposting_review_counts'),
+            # pre-단계: 크롤링 / LLM 프로세싱
+            path('review/prestage/scrape-form/', self.admin_site.admin_view(self.prestage_scrape_form_view),
+                 name='jobposting_prestage_scrape_form'),
+            path('review/prestage/scrape-start/', self.admin_site.admin_view(self.prestage_scrape_start_view),
+                 name='jobposting_prestage_scrape_start'),
+            path('review/prestage/pending/', self.admin_site.admin_view(self.prestage_pending_view),
+                 name='jobposting_prestage_pending'),
+            path('review/prestage/process-one/', self.admin_site.admin_view(self.prestage_process_one_view),
+                 name='jobposting_prestage_process_one'),
             path('review/verify-candidates/', self.admin_site.admin_view(self.review_verify_candidates_view),
                  name='jobposting_review_verify_candidates'),
             path('review/auto-verify/', self.admin_site.admin_view(self.review_auto_verify_view),
@@ -329,12 +339,133 @@ class JobPostingAdmin(admin.ModelAdmin):
         return JsonResponse({'ok': True, 'count': len(new_checks), 'upgraded': upgraded})
 
     def review_counts_view(self, request):
-        """AJAX: 프리셋별 건수 반환."""
+        """AJAX: 프리셋별 건수 + pre-단계 대기 건수 반환."""
         base_qs = JobPosting.objects.all()
         counts = {}
         for key in REVIEW_PRESETS:
             counts[key] = get_preset_queryset(key, base_qs).count()
+        # pre-2단계: LLM 처리 대기(RawPosting status=pending) 건수
+        counts['pending_raw'] = RawPosting.objects.filter(
+            status=RawPosting.STATUS_PENDING
+        ).count()
         return JsonResponse(counts)
+
+    # ── pre-단계: 크롤링 / LLM 프로세싱 ──────────────────────────
+    def prestage_scrape_form_view(self, request):
+        """AJAX GET: pre-1단계 크롤링 실행 폼 fragment."""
+        already_running = PipelineRun.objects.filter(status='running').first()
+        form = PipelineRunForm(initial={
+            'source': 'yakdap',
+            'start_id': 38800, 'count': 100, 'step': 2, 'year': 2026,
+            'big_categories': ['서울'], 'headless': True,
+        })
+        ctx = {'form': form, 'already_running': already_running}
+        if already_running:
+            ctx['running_status_url'] = reverse('admin:pipelinerun_status', args=[already_running.id])
+            ctx['running_confirm_url'] = reverse('admin:pipelinerun_confirm_login', args=[already_running.id])
+        return render(request, 'admin/postings/jobposting/prestage_scrape_form.html', ctx)
+
+    def prestage_scrape_start_view(self, request):
+        """AJAX POST: 크롤링(스크래핑)만 백그라운드 실행. RawPosting까지만 저장."""
+        if request.method != 'POST':
+            return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+        already_running = PipelineRun.objects.filter(status='running').first()
+        if already_running:
+            return JsonResponse({
+                'ok': False, 'error': f'이미 실행 중인 작업이 있습니다 (Run #{already_running.id})',
+                'log_url': reverse('admin:pipelinerun_log', args=[already_running.id]),
+                'status_url': reverse('admin:pipelinerun_status', args=[already_running.id]),
+                'confirm_url': reverse('admin:pipelinerun_confirm_login', args=[already_running.id]),
+            }, status=409)
+        form = PipelineRunForm(request.POST)
+        if not form.is_valid():
+            return JsonResponse({'ok': False, 'error': '입력값 오류', 'detail': form.errors}, status=400)
+
+        kwargs = form.get_command_kwargs()
+        kwargs['dry_run'] = True  # 크롤링만: RawPosting까지만 저장하고 LLM은 pre-2단계에서
+        run = PipelineRun.objects.create(
+            source=kwargs['source'], status='running', log_output='크롤링 시작...\n',
+        )
+        _start_pipeline_thread(run.id, kwargs)
+        return JsonResponse({
+            'ok': True, 'run_id': run.id,
+            'log_url': reverse('admin:pipelinerun_log', args=[run.id]),
+            'status_url': reverse('admin:pipelinerun_status', args=[run.id]),
+            'confirm_url': reverse('admin:pipelinerun_confirm_login', args=[run.id]),
+        })
+
+    PENDING_SORT_FIELDS = [
+        ('scraped_at', '수집 시각'),
+        ('title', '제목'),
+        ('pharmacy_name', '약국'),
+        ('platform', '플랫폼'),
+        ('city', '지역'),
+    ]
+
+    def prestage_pending_view(self, request):
+        """AJAX GET: pre-2단계 — LLM 처리 대기(RawPosting pending) 목록 fragment."""
+        MAX_ROWS = 500
+        valid = {f for f, _ in self.PENDING_SORT_FIELDS}
+        sort = request.GET.get('sort', 'scraped_at')
+        if sort not in valid:
+            sort = 'scraped_at'
+        sort_dir = request.GET.get('sort_dir', 'asc')
+        if sort_dir not in ('asc', 'desc'):
+            sort_dir = 'asc'
+        order = ('-' if sort_dir == 'desc' else '') + sort
+
+        qs = RawPosting.objects.filter(status=RawPosting.STATUS_PENDING).order_by(order, 'id')
+        total = qs.count()
+        rows = list(qs[:MAX_ROWS])
+        sort_options = [
+            {'value': f, 'label': label, 'selected': f == sort}
+            for f, label in self.PENDING_SORT_FIELDS
+        ]
+        return render(request, 'admin/postings/jobposting/prestage_pending.html', {
+            'rows': rows,
+            'total': total,
+            'truncated': total > MAX_ROWS,
+            'max_rows': MAX_ROWS,
+            'sort_options': sort_options,
+            'sort_dir': sort_dir,
+        })
+
+    def prestage_process_one_view(self, request):
+        """AJAX POST: pending RawPosting 한 건을 LLM 처리하여 JobPosting 생성.
+
+        진행 모달이 항목을 하나씩 호출한다. 결과 dict(status/title/note)를 반환.
+        """
+        if request.method != 'POST':
+            return JsonResponse({'ok': False, 'error': 'POST only'}, status=405)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'ok': False, 'error': 'invalid JSON'}, status=400)
+
+        raw_id = data.get('id')
+        if not raw_id:
+            return JsonResponse({'ok': False, 'error': 'id required'}, status=400)
+
+        raw = RawPosting.objects.filter(id=raw_id).first()
+        if raw is None:
+            return JsonResponse({'ok': True, 'result': {
+                'id': raw_id, 'status': 'skipped', 'note': '대상 없음', 'title': '',
+            }})
+        if raw.status != RawPosting.STATUS_PENDING:
+            return JsonResponse({'ok': True, 'result': {
+                'id': raw_id, 'status': 'skipped', 'note': '이미 처리됨', 'title': raw.title,
+            }})
+
+        from django.conf import settings
+        from google import genai
+        from pipeline.stages import process_raw_posting
+
+        if not settings.GOOGLE_API_KEY:
+            return JsonResponse({'ok': False, 'error': 'GOOGLE_API_KEY 미설정'}, status=500)
+
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        result = process_raw_posting(raw, client, settings.LLM_MODEL, log=lambda m: None)
+        return JsonResponse({'ok': True, 'result': result})
 
     def review_verify_candidates_view(self, request):
         """AJAX GET: 현재 프리셋의 LLM 자동 검토 대상 공고 id 목록 반환."""
@@ -568,7 +699,6 @@ class PipelineRunAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom = [
-            path('run/', self.admin_site.admin_view(self.run_pipeline_view), name='pipelinerun_run'),
             path('run-statistics/', self.admin_site.admin_view(self.run_statistics_view), name='pipelinerun_run_statistics'),
             path('log/<int:run_id>/', self.admin_site.admin_view(self.run_log_view), name='pipelinerun_log'),
             path('status/<int:run_id>/', self.admin_site.admin_view(self.run_status_view), name='pipelinerun_status'),
@@ -590,44 +720,6 @@ class PipelineRunAdmin(admin.ModelAdmin):
         threading.Thread(target=_target, daemon=True).start()
         self.message_user(request, '통계 생성을 백그라운드에서 시작했습니다. 잠시 후 Notion 페이지를 확인하세요.')
         return redirect('../')
-
-    def run_pipeline_view(self, request):
-        """파이프라인 실행 폼 페이지."""
-        already_running = PipelineRun.objects.filter(status='running').first()
-
-        if request.method == 'POST':
-            form = PipelineRunForm(request.POST)
-            if form.is_valid():
-                if already_running:
-                    self.message_user(request, f'이미 실행 중인 파이프라인이 있습니다. (Run #{already_running.id})', level='warning')
-                else:
-                    kwargs = form.get_command_kwargs()
-                    run = PipelineRun.objects.create(
-                        source=kwargs['source'],
-                        status='running',
-                        log_output='파이프라인 시작...\n',
-                    )
-                    _start_pipeline_thread(run.id, kwargs)
-                    return redirect(f'../log/{run.id}/')
-        else:
-            form = PipelineRunForm(initial={
-                'source': 'yakdap',
-                'start_id': 38800,
-                'count': 100,
-                'step': 2,
-                'year': 2026,
-                'big_categories': ['서울'],
-                'headless': True,
-            })
-
-        context = {
-            **self.admin_site.each_context(request),
-            'title': '파이프라인 실행',
-            'form': form,
-            'already_running': already_running,
-            'opts': self.model._meta,
-        }
-        return render(request, 'admin/postings/pipelinerun/run_pipeline.html', context)
 
     def run_log_view(self, request, run_id):
         """실행 로그 확인 페이지."""
@@ -703,6 +795,15 @@ def _start_pipeline_thread(run_id: int, kwargs: dict):
 
     t = threading.Thread(target=_target, daemon=True)
     t.start()
+
+
+@admin.register(RawPosting)
+class RawPostingAdmin(admin.ModelAdmin):
+    list_display = ('title', 'platform', 'status', 'city', 'scraped_at', 'processed_at')
+    list_filter = ('status', 'platform', 'big_category')
+    search_fields = ('url', 'title', 'pharmacy_name')
+    ordering = ('-scraped_at',)
+    readonly_fields = ('scraped_at', 'processed_at')
 
 
 @admin.register(AdminCheck)

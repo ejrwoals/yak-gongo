@@ -54,19 +54,18 @@ class PipelineRunForm(forms.Form):
         required=False, initial=True, label='헤드리스 모드',
         help_text='브라우저 창 없이 실행 (서버 환경 권장)',
     )
-    dry_run = forms.BooleanField(
-        required=False, label='Dry Run',
-        help_text='스크래핑만 하고 LLM 처리 및 DB 저장은 건너뜁니다.',
-    )
 
     def get_command_kwargs(self) -> dict:
-        """form 데이터를 run_pipeline management command 인자 형태로 변환."""
+        """form 데이터를 run_pipeline management command 인자 형태로 변환.
+
+        dry_run(크롤링만 실행 여부)은 호출 측(admin view)이 mode에 따라 설정한다.
+        """
         data = self.cleaned_data
         source = data['source']
         kwargs = {
             'source': source,
             'headless': data.get('headless', True),
-            'dry_run': data.get('dry_run', False),
+            'dry_run': False,
         }
         if source == 'yakdap':
             kwargs['headless'] = False  # 카카오 로그인 필요

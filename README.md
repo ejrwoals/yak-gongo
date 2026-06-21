@@ -34,24 +34,29 @@ yak-gongo/
 │   └── urls.py
 │
 ├── postings/                # 핵심 앱: 공고 DB + Admin
-│   ├── models.py            # JobPosting, AdminCheck, AgentReviewSession, PipelineRun, DashboardSnapshot
-│   ├── admin.py             # Admin 커스터마이징 + 파이프라인 실행 UI + 대시보드 스냅샷 갱신 버튼
+│   ├── models.py            # JobPosting, RawPosting, AdminCheck, AgentReviewSession, PipelineRun, DashboardSnapshot
+│   ├── admin.py             # Admin 커스터마이징 + 리뷰 대시보드 pre-단계(크롤링·LLM 프로세싱) UI + 대시보드 스냅샷 갱신 버튼
 │   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼, LLM 검토 대상/포커스)
 │   ├── review_verify.py     # 2단계 outlier 공고 LLM(Gemini) 재검산 서비스 (DOMAIN_RULES 공유 상수)
 │   ├── review_agent.py      # 3단계 에러 케이스 대화형 agent 검토 서비스 (Gemini multi-turn + 구조화 출력, 파생 필드 서버 재계산)
 │   ├── dataframe.py         # build_dataframe() — DB → 통계 호환 pandas DataFrame (run_statistics·웹 대시보드 공유)
 │   ├── dashboard_stats.py   # compute_dashboard_data() — 웹 대시보드용 통계 산출 (matplotlib/Notion 의존성 없는 순수 계산)
-│   ├── forms.py             # PipelineRunForm (Admin 실행 폼)
+│   ├── forms.py             # PipelineRunForm (크롤링 실행 폼)
 │   ├── apps.py              # 서버 시작 시 orphan PipelineRun 정리
 │   ├── management/commands/
-│   │   ├── run_pipeline.py  # 수집 + LLM 처리 일괄 실행 명령어
+│   │   ├── scrape_postings.py  # 1단계: 크롤링하여 RawPosting(pending)으로 저장
+│   │   ├── process_postings.py # 2단계: pending RawPosting을 LLM 처리하여 JobPosting 생성
+│   │   ├── run_pipeline.py  # 1·2단계를 순서대로 실행하는 오케스트레이터
 │   │   ├── run_statistics.py # DB → DataFrame 변환 후 Notion 통계 차트 생성
 │   │   ├── auto_verify_step3.py # 2단계 outlier 공고 LLM 일괄 자동 검토 (CLI)
 │   │   └── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
 │   └── templates/admin/postings/
+│       ├── jobposting/
+│       │   ├── review_dashboard.html        # 리뷰 대시보드 (pre-단계 + 프리셋 탭)
+│       │   ├── prestage_scrape_form.html     # pre-1단계: 크롤링 실행 폼 fragment
+│       │   └── prestage_pending.html         # pre-2단계: LLM 처리 대기 목록 fragment
 │       ├── pipelinerun/
-│       │   ├── change_list.html # 파이프라인 실행 버튼이 추가된 목록
-│       │   ├── run_pipeline.html# 실행 옵션 폼 페이지
+│       │   ├── change_list.html # "통계 생성" 버튼이 추가된 목록 (실행 이력 로그 전용)
 │       │   └── run_log.html     # 실시간 로그 폴링 페이지
 │       └── dashboardsnapshot/
 │           └── change_list.html # "대시보드 업데이트" 버튼이 추가된 목록
@@ -60,12 +65,13 @@ yak-gongo/
 │   ├── prompts.py           # 5개 task 프롬프트 / few-shot
 │   ├── tasks.py             # run_task_1() ~ run_task_5() — Gemini API 호출
 │   ├── runner.py            # process_posting() — 단일 공고 오케스트레이터
+│   ├── stages.py            # scrape_stage / process_stage / process_raw_posting — 2단계 파이프라인 공통 로직
 │   ├── validator.py         # error_check() — LLM 출력 일관성 검증
 │   └── salary.py            # to_net_salary() — 세후 월급 계산, ceil_hourly_wage() — 시급 올림 보정
 │
 ├── scraper/                 # 웹 스크래퍼 (Selenium)
-│   ├── yakdap.py            # 약문약답 스크래퍼
-│   └── pharm_recruit.py     # 팜리크루트 스크래퍼 (자동 페이지네이션)
+│   ├── yakdap.py            # 약문약답 스크래퍼 (on_item 콜백으로 건별 중간 저장 지원)
+│   └── pharm_recruit.py     # 팜리크루트 스크래퍼 (자동 페이지네이션, on_item 콜백)
 │   # pharm_recruit_urls.json — 초기 설정 시 생성 필요 (아래 참고)
 │
 ├── geo/
@@ -193,17 +199,36 @@ NOTION_TOKEN=your-notion-integration-token
 
 ## 공고 수집 및 처리
 
-`run_pipeline` management command 하나로 스크래핑 → LLM 처리 → DB 저장이 순서대로 실행된다.
+수집·처리는 **재개 가능(resumable)·멱등(idempotent)**한 두 단계로 나뉘며, 그 사이에 `RawPosting` 스테이징 테이블을 둔다.
+
+- **1단계 (크롤링)**: 스크래퍼가 공고를 한 건 긁을 때마다 즉시 `RawPosting(status=pending)`으로 저장한다. 도중에 멈추거나 크래시해도 이미 긁은 공고는 보존되며, 다시 실행하면 (이미 `JobPosting`/`RawPosting`에 있는 URL은 건너뛰고) 끊긴 지점부터 이어서 크롤링한다.
+- **2단계 (LLM 처리)**: `status=pending`인 `RawPosting`만 LLM 파이프라인으로 처리해 `JobPosting`을 생성하고, 각 건의 status를 `processed` / `skipped_no_salary` / `error`로 갱신한다. 도중에 멈춰도 재실행하면 아직 `pending`인 것부터 이어서 처리한다.
+
+두 단계의 공통 로직은 `pipeline/stages.py`(`scrape_stage` / `process_stage` / `process_raw_posting`)에 있고, 세 가지 방식으로 실행할 수 있다.
+
+| 실행 방식 | 동작 |
+|---|---|
+| `scrape_postings` 커맨드 | 1단계만 (크롤링 → RawPosting) |
+| `process_postings` 커맨드 | 2단계만 (pending RawPosting → JobPosting) |
+| `run_pipeline` 커맨드 | 1단계 → 2단계를 순서대로 실행하는 오케스트레이터 |
+| 리뷰 대시보드 pre-단계 (Admin UI) | 1·2단계를 각각 버튼으로 실행 ([아래](#admin에서-파이프라인-실행) 참고) |
+
+아래 옵션 표는 `scrape_postings`(1단계)와 `run_pipeline`(1+2단계)이 공유한다. `process_postings`(2단계)는 옵션 없이 실행하면 모든 pending RawPosting을 처리한다.
 
 ### 약문약답 수집
 
 ```bash
+# 1단계 + 2단계를 한 번에
 python manage.py run_pipeline \
     --source yakdap \
     --start-id 38800 \
     --count 100 \
     --step 2 \
     --year 2024
+
+# 단계를 따로 돌리기
+python manage.py scrape_postings --source yakdap --start-id 38800 --count 100 --step 2 --year 2024
+python manage.py process_postings   # 1단계 완료 후 별도로
 ```
 
 | 옵션 | 설명 | 기본값 |
@@ -240,19 +265,27 @@ python manage.py run_pipeline \
 | 옵션 | 설명 |
 |---|---|
 | `--headless` | 브라우저 창 없이 백그라운드 실행 |
-| `--dry-run` | 스크래핑만 하고 LLM 처리·DB 저장은 건너뜀 (URL 확인용) |
+| `--dry-run` | (`run_pipeline` 전용) 1단계 크롤링만 하고 2단계 LLM 처리는 건너뜀 — `RawPosting`까지만 저장한다 |
 | `--run-id` | Admin UI에서 미리 생성된 PipelineRun ID (내부용, 수동 사용 불필요) |
+
+> `--dry-run`은 `run_pipeline`을 `scrape_postings`처럼(크롤링만) 동작시킨다. RawPosting은 그대로 남으므로 이후 `process_postings`로 LLM 처리를 이어갈 수 있다.
 
 ### 처리 흐름
 
 ```
-스크래핑 (Selenium)
+[1단계] 스크래핑 (Selenium)
     ↓
-중복 URL 자동 스킵 (기존 DB와 비교)
+중복 URL 자동 스킵 (JobPosting + RawPosting과 비교)
+    ↓
+공고 1건마다 즉시 RawPosting(status=pending) 저장  ← 여기까지가 scrape_postings / --dry-run
+    │
+    │  (도중에 멈춰도 보존, 재실행하면 이어서 진행)
+    ↓
+[2단계] pending RawPosting을 한 건씩 LLM 처리           ← 여기부터가 process_postings
     ↓
 LLM 파이프라인 (Gemini API, 공고당 최대 5회 호출)
     ├─ Task 1: 급여 유형·금액, 일회성 여부
-    │     └─ 급여 미명시 → 저장 건너뜀 (None 반환)
+    │     └─ 급여 미명시 → 저장 건너뜀 (None 반환, RawPosting status=skipped_no_salary)
     ├─ Task 2: 일회성 근무 시급 계산 (일회성인 경우)
     ├─ Task 3: 평일·주말 출퇴근 시각 추출 (지속성인 경우)
     ├─ Task 4: Task 3 결과 검증·수정
@@ -264,7 +297,7 @@ salary.to_net_salary(): 세후 월급 산출 → 세후 시급(net_hourly_wage) 
     ↓
 salary.ceil_hourly_wage(): 세후 시급·일회성 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정
     ↓
-JobPosting DB 저장
+JobPosting DB 저장 + RawPosting status=processed (에러 시 error)
     ↓
 PipelineRun 이력 기록
 ```
@@ -277,25 +310,36 @@ http://localhost:8000/admin/ 접속 후 사용.
 
 ### Admin에서 파이프라인 실행
 
-**Postings > Pipeline runs** 목록 상단의 **파이프라인 실행** 버튼을 클릭하면 브라우저에서 바로 수집 + LLM 처리를 실행할 수 있다.
+수집·처리 두 단계는 **리뷰 대시보드** 상단의 **pre-단계** 영역에서 실행한다 (프리셋 탭 위, 점선으로 구분된 보라색 탭 두 개). 진입은 **Postings > Job postings** 상단 **리뷰 대시보드** 링크.
 
-1. 소스(약문약답/팜리크루트) 선택 및 옵션 입력
-   - 약문약답 선택 시 `headless` 옵션은 자동으로 비활성화됨 (카카오 로그인 필요)
-   - 팜리크루트 선택 시 지역 대분류를 체크박스로 복수 선택 가능, 수집 개수 한도 설정 가능
-2. **실행** 버튼 클릭 → 백그라운드 thread에서 `run_pipeline` 커맨드 실행
-3. 자동으로 실시간 로그 페이지(`/log/<id>/`)로 이동하여 진행 상황 확인 (AJAX 폴링)
-4. 약문약답의 경우, 카카오 로그인 완료 후 **로그인 완료** 버튼을 클릭하면 스크래핑이 시작됨
+**pre-1단계: 공고 크롤링** (`크롤링 실행` 버튼)
 
-동시에 하나의 파이프라인만 실행 가능하며, 이미 실행 중인 경우 경고 메시지가 표시된다.
+1. 버튼을 누르면 인라인 크롤링 폼이 펼쳐진다. 소스(약문약답/팜리크루트)와 옵션을 입력한다.
+   - 약문약답 선택 시 `headless`는 자동 비활성화됨 (카카오 로그인 필요)
+   - 팜리크루트 선택 시 지역 대분류 복수 선택 + 수집 개수 한도 설정 가능
+2. **크롤링 시작** → 백그라운드 thread에서 `run_pipeline --dry-run`(크롤링만) 실행 → `RawPosting`까지만 저장. 페이지 이동 없이 **대시보드 하단(`#table-container`)에 실시간 로그 패널**이 인라인으로 표시된다(`status/<id>/`를 1초 간격으로 폴링). 별도 로그 페이지로 이동하지 않는다.
+3. 약문약답의 경우, 로그 패널 안에 카카오 로그인 안내와 **로그인 완료** 버튼이 인라인으로 나타나며, 브라우저에서 로그인을 마친 뒤 이 버튼을 누르면 스크래핑이 시작된다. 완료되면 패널에서 바로 **pre-2단계로** 넘어가는 버튼이 뜬다.
+
+**pre-2단계: LLM 프로세싱** (`처리 대기 [N]` 버튼)
+
+1. 버튼의 배지에 처리 대기(`status=pending`) `RawPosting` 건수가 표시된다. 누르면 대시보드 하단에 설명 박스와 함께 대기 목록 표가 펼쳐진다(최대 500행). 표는 프리셋 컨트롤바와 동일한 레이아웃(정렬 좌 / 액션 우)으로, 수집 시각·제목·약국·플랫폼·지역 기준 정렬(오름/내림)을 지원한다.
+2. 전체 또는 체크한 행만 선택해 처리하면, LLM 자동 검토와 동일한 **실시간 진행 모달**이 뜨고 한 건씩 LLM 처리한다(건당 `prestage/process-one/` 호출 → `pipeline.stages.process_raw_posting`). 각 건은 저장/급여 미명시 건너뜀/에러로 집계되며, 완료 후 대기 목록과 배지가 자동 갱신된다.
+
+pre-단계 상세 패널(크롤링 폼·로그·대기 목록)은 프리셋 상세와 동일한 하단 영역(`#table-container`)에 렌더되며, 프리셋 탭과 상호 토글된다. 동시에 하나의 크롤링만 실행 가능하며, 이미 실행 중이면 실행 중인 작업 로그를 (페이지 이동 없이) 같은 패널에서 볼지 묻는다. 크롤링과 LLM 프로세싱이 분리돼 있어, 크롤링 도중 멈춰도 RawPosting은 남고 나중에 pre-2단계로 이어서 처리할 수 있다.
 
 **Admin 커스텀 URL:**
 
 | URL 패턴 | 설명 |
 |---|---|
-| `pipelinerun/run/` | 파이프라인 실행 폼 페이지 |
+| `jobposting/review/prestage/scrape-form/` | AJAX GET: pre-1단계 크롤링 실행 폼 fragment |
+| `jobposting/review/prestage/scrape-start/` | AJAX POST: 크롤링(스크래핑)만 백그라운드 실행 |
+| `jobposting/review/prestage/pending/` | AJAX GET: pre-2단계 처리 대기 RawPosting 목록 fragment |
+| `jobposting/review/prestage/process-one/` | AJAX POST: pending RawPosting 한 건을 LLM 처리 |
 | `pipelinerun/log/<id>/` | 실시간 로그 확인 페이지 |
 | `pipelinerun/status/<id>/` | AJAX 상태 + 로그 JSON 엔드포인트 |
 | `pipelinerun/confirm-login/<id>/` | AJAX 카카오 로그인 완료 신호 엔드포인트 |
+
+> **Postings > Pipeline runs** 목록은 이제 실행 이력·로그 확인 전용이며, 상단 버튼은 Notion **통계 생성** 하나만 남는다 (파이프라인 실행 폼 페이지는 제거됨).
 
 서버가 재시작되면 `postings/apps.py`에서 비정상 종료된 `running` 상태의 PipelineRun을 자동으로 `failed`로 변경한다.
 
@@ -558,6 +602,7 @@ python manage.py run_statistics --output-dir /path/to/output
 | `prompts.py` | `QUERY_TASK_1~5`, `FEW_SHOT_1~5` 상수 — 프롬프트 문자열만 관리 |
 | `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 (`raw_decode`로 첫 번째 유효 JSON만 추출) |
 | `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. 급여 미명시 공고는 `None`을 반환하여 저장을 건너뜀. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
+| `stages.py` | 2단계 파이프라인 공통 로직. `scrape_stage()` — 크롤링하여 `RawPosting(pending)` 저장. `process_stage()` — pending RawPosting을 일괄 LLM 처리. `process_raw_posting(raw, client, ...)` — 단일 RawPosting 처리 단위 함수(일괄 처리와 대시보드 건별 처리가 공유). 모두 멱등하다 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간 재계산 |
 | `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환. `calculate_net_salary(gross_monthly)` — 세전 월급 → 세후 월급 환산(공식 본체, 대화형 agent의 세전 환산도 이 함수를 공유). `ceil_hourly_wage(value)` — 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정 |
 
@@ -580,11 +625,13 @@ result = process_posting(body="...", client=client, model_name=settings.LLM_MODE
 
 | 파일 | 역할 |
 |---|---|
-| `yakdap.py` | `scrape(start_id, count, step, year, ...)` → `list[dict]` |
-| `pharm_recruit.py` | `scrape(big_category, year, ...)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원 |
+| `yakdap.py` | `scrape(start_id, count, step, year, ..., on_item=None)` → `list[dict]`. 약문약답이 styled-components 해시 클래스(`sc-*`)를 쓰므로 재배포 시 깨지지 않도록, 시맨틱 클래스(`title-container`, `detail__pharmacy-name`, `detail__pharmacy-address`, `detail__message`)와 표는 라벨 텍스트 기반 XPath(급여·근무시간)로 선택한다 (`main` 기준 앵커) |
+| `pharm_recruit.py` | `scrape(big_category, year, ..., on_item=None)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원. 중복 URL 스킵 시에도 로그를 남겨 재크롤링 진행 상황이 끊겨 보이지 않는다 |
 | `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑). `.gitignore` 대상이므로 [초기 설정](#초기-설정) 참고하여 생성 필요 |
 
 반환 dict의 키: `url`, `platform`, `created_at`, `title`, `pharmacy_name`, `body`, `city`, `big_category`
+
+`on_item` 콜백을 전달하면 공고 1건을 수집할 때마다 그 dict로 호출되어, 전체 리스트 반환을 기다리지 않고 건별 중간 저장(스테이징 단계의 `RawPosting` 저장)을 할 수 있다.
 
 ### `geo/mapping.py`
 
@@ -694,6 +741,20 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 
 > 검토 완료 여부는 더 이상 `JobPosting`의 boolean 필드가 아니다. 별도의 `AdminCheck` 레코드 존재 여부가 단일 판정 기준이며, 쿼리에서는 `is_reviewed`(= `Exists(AdminCheck)`, source 무관) 주석으로 사용한다.
 
+### RawPosting
+
+크롤링 결과를 LLM 처리 **전에** 보관하는 스테이징 레코드. 1단계(크롤링)가 공고를 한 건씩 즉시 여기에 저장하므로 도중에 멈춰도 긁은 것은 남고, 2단계(LLM 처리)는 `status='pending'`인 레코드만 순회해 `JobPosting`을 만든다. 두 단계 모두 멱등하게 만드는 핵심 모델이다 ([공고 수집 및 처리](#공고-수집-및-처리) 참고). 콘텐츠 필드(`url`·`platform`·`created_at`·`title`·`pharmacy_name`·`body`·`city`·`big_category`)는 스크래퍼가 반환하는 dict 키와 동일하다.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `url` | URLField (unique) | 공고 원본 URL (중복 스킵 기준) |
+| `body` 등 콘텐츠 필드 | — | 스크래퍼 dict와 동일 (`platform`, `created_at`, `title`, `pharmacy_name`, `city`, `big_category` 포함) |
+| `status` | CharField (choices, db_index) | `pending`(처리 대기) / `processed`(JobPosting 생성 완료) / `skipped_no_salary`(급여 미명시로 건너뜀) / `error`(처리 중 에러). 기본값 `pending` |
+| `error_log` | TextField | 처리 중 예외 발생 시 메시지 |
+| `run` | ForeignKey → PipelineRun (null) | 이 레코드를 만든 크롤링 회차 |
+| `scraped_at` | DateTimeField | 크롤링 저장 시각 (`auto_now_add`) |
+| `processed_at` | DateTimeField (null) | LLM 처리 완료 시각 |
+
 ### AdminCheck
 
 관리자 검토 완료 기록이자 **"검토 완료"의 단일 진실 공급원(single source of truth)**. **레코드 존재 = 검토 완료**, 레코드 없음 = 미검토. 리뷰 대시보드에서 **검토 완료**(`mark-reviewed/`)를 실행하면, 또는 LLM 자동 검토에서 값이 본문과 일치할 때 자동 생성된다.
@@ -724,14 +785,14 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 
 | 필드 | 설명 |
 |---|---|
-| `source` | `yakdap` / `pharm_recruit` |
+| `source` | `yakdap` / `pharm_recruit` (크롤링), 또는 `process` (`process_postings` 단독 실행) |
 | `started_at` | 실행 시작 시각 |
 | `finished_at` | 완료 시각 |
 | `total_scraped` | 스크래핑된 공고 수 |
 | `total_processed` | DB에 저장된 공고 수 |
 | `total_errors` | 에러 발생 공고 수 |
 | `status` | `running` / `done` / `failed` |
-| `log_output` | 실행 중 누적되는 상세 로그 (Admin 실시간 로그 페이지에서 표시) |
+| `log_output` | 실행 중 누적되는 상세 로그. 대시보드 로그 패널에 거의 실시간으로 보이도록 한 줄마다 즉시 DB에 반영된다 |
 
 ### DashboardSnapshot
 

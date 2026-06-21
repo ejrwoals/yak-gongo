@@ -1,0 +1,249 @@
+"""파이프라인 2단계 공통 로직.
+
+scrape_stage  : 공고를 크롤링하여 RawPosting(status=pending)으로 즉시 저장.
+process_stage : pending RawPosting을 LLM 처리하여 JobPosting을 생성.
+
+두 단계 모두 멱등(idempotent)하다. 도중에 멈춰도 이미 저장된 RawPosting/
+JobPosting은 남으며, 재실행하면 끊긴 지점부터 이어서 진행된다.
+
+- scrape_stage: JobPosting/RawPosting에 이미 있는 URL은 건너뛴다.
+- process_stage: status='pending'인 RawPosting만 처리한다.
+"""
+import io
+import sys
+
+from django.conf import settings
+from django.utils import timezone
+
+from google import genai
+
+from postings.models import JobPosting, PipelineRun, RawPosting
+from pipeline.runner import process_posting
+from geo.mapping import normalize_city, assign_big_category
+
+
+def _default_log(msg: str):
+    print(msg)
+
+
+# ── 스크래핑 단계 ──────────────────────────────────────────────────────────
+def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None, log=None) -> int:
+    """공고를 크롤링하여 RawPosting으로 즉시 저장한다. 저장된(신규) 건수를 반환.
+
+    이미 JobPosting 또는 RawPosting에 존재하는 URL은 스크래퍼 단계에서 스킵되므로,
+    재실행 시 끊긴 지점부터 크롤링을 이어간다.
+    """
+    log = log or _default_log
+
+    existing_urls: set[str] = set(JobPosting.objects.values_list('url', flat=True))
+    existing_urls |= set(RawPosting.objects.values_list('url', flat=True))
+    log(f'기존 URL {len(existing_urls)}개 로드 완료 (JobPosting + RawPosting)')
+
+    saved = 0
+
+    def on_item(record: dict):
+        nonlocal saved
+        _, created = RawPosting.objects.update_or_create(
+            url=record['url'],
+            defaults={
+                'platform': record.get('platform', ''),
+                'created_at': record.get('created_at') or None,
+                'title': record.get('title', ''),
+                'pharmacy_name': record.get('pharmacy_name', ''),
+                'body': record.get('body', ''),
+                'city': record.get('city', ''),
+                'big_category': record.get('big_category', ''),
+                'status': RawPosting.STATUS_PENDING,
+                'run': run,
+            },
+        )
+        if created:
+            saved += 1
+            if run is not None:
+                run.total_scraped = saved
+                run.save(update_fields=['total_scraped'])
+
+    if source == 'yakdap':
+        from scraper.yakdap import scrape
+        scrape(
+            start_id=options['start_id'],
+            count=options['count'],
+            step=options['step'],
+            year=options['year'],
+            headless=options['headless'],
+            existing_urls=existing_urls,
+            login_event=login_event,
+            log=log,
+            on_item=on_item,
+        )
+    else:
+        import math as _math
+        from scraper.pharm_recruit import scrape
+        big_categories = options.get('big_categories') or options.get('big_category') or ['서울']
+        if isinstance(big_categories, str):
+            big_categories = [big_categories]
+        pharm_count = options.get('pharm_count')
+        per_category = (
+            _math.ceil(pharm_count / len(big_categories)) if pharm_count else None
+        )
+        for big_cat in big_categories:
+            limit_msg = f' (최대 {per_category}개)' if per_category else ' (전체)'
+            log(f'[{big_cat}] 스크래핑 시작{limit_msg}')
+            scrape(
+                big_category=big_cat,
+                year=options['year'],
+                headless=options['headless'],
+                existing_urls=existing_urls,
+                category_limit=per_category,
+                log=log,
+                on_item=on_item,
+            )
+
+    log(f'스크래핑 완료: {saved}개 신규 저장 (RawPosting)')
+    return saved
+
+
+# ── LLM 처리 단계 ──────────────────────────────────────────────────────────
+def process_stage(run: PipelineRun, log=None, client=None, model_name: str = '') -> dict:
+    """pending RawPosting을 LLM 처리하여 JobPosting을 생성한다.
+
+    각 RawPosting은 처리 결과에 따라 status가 갱신되므로, 도중에 멈춰도
+    재실행하면 아직 pending인 것부터 이어서 처리한다.
+
+    Returns:
+        {'processed': int, 'errors': int, 'skipped': int}
+    """
+    log = log or _default_log
+
+    if client is None:
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+    if not model_name:
+        model_name = settings.LLM_MODEL
+
+    # 처리 중 status를 갱신하므로, 대상 pk를 먼저 스냅샷으로 확보한다.
+    pending_ids = list(
+        RawPosting.objects.filter(status=RawPosting.STATUS_PENDING)
+        .order_by('scraped_at')
+        .values_list('id', flat=True)
+    )
+    total = len(pending_ids)
+    log(f'LLM 처리 대기: {total}개')
+
+    processed = 0
+    errors = 0
+    skipped = 0
+
+    for idx, raw_id in enumerate(pending_ids, start=1):
+        try:
+            raw = RawPosting.objects.get(id=raw_id)
+        except RawPosting.DoesNotExist:
+            continue
+
+        log(f'\n{"━"*10} [{idx}/{total}] {"━"*10}')
+        result = process_raw_posting(raw, client, model_name, log=log)
+
+        status = result['status']
+        if status in ('ok', 'error'):
+            processed += 1
+            if status == 'error':
+                errors += 1
+        elif status == 'failed':
+            errors += 1
+        elif status == 'skipped':
+            skipped += 1
+
+        if run is not None:
+            run.total_processed = processed
+            run.total_errors = errors
+            run.save(update_fields=['total_processed', 'total_errors'])
+
+    log(f'\n{"="*40}')
+    log(f'완료: {processed}개 저장, {errors}개 에러')
+    if skipped:
+        log(f'{skipped}개 급여 미명시 건너뜀')
+
+    return {'processed': processed, 'errors': errors, 'skipped': skipped}
+
+
+def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
+    """단일 RawPosting을 LLM 처리하여 JobPosting을 생성하고 status를 갱신한다.
+
+    process_stage(일괄)와 대시보드의 건별 처리(진행 모달)가 공유하는 단위 처리 함수.
+
+    Returns dict:
+        {'id', 'title', 'status', 'note'}
+        status ∈ {'ok'(저장 완료), 'error'(저장했으나 검산 에러), 'skipped'(급여 미명시),
+                  'failed'(파이프라인 예외)}
+    """
+    log = log or _default_log
+
+    if client is None:
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+    if not model_name:
+        model_name = settings.LLM_MODEL
+
+    base = {'id': raw.id, 'title': raw.title}
+
+    # 이미 JobPosting이 있으면(과거 직접 저장분 등) 처리 완료로 표시
+    if JobPosting.objects.filter(url=raw.url).exists():
+        raw.status = RawPosting.STATUS_PROCESSED
+        raw.processed_at = timezone.now()
+        raw.save(update_fields=['status', 'processed_at'])
+        log(f'[SKIP] 이미 존재: {raw.url}')
+        return {**base, 'status': 'ok', 'note': '이미 JobPosting 존재'}
+
+    log(f'URL  : {raw.url}')
+    log(f'제목 : {raw.title}')
+
+    # stdout 캡처 (tasks/validator의 print() 포함)
+    captured = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = captured
+    try:
+        pipeline_result = process_posting(raw.body, client, model_name, log=log)
+    except Exception as e:
+        sys.stdout = old_stdout
+        log(f'[PIPELINE ERROR] {raw.url}: {e}')
+        raw.status = RawPosting.STATUS_ERROR
+        raw.error_log = str(e)
+        raw.save(update_fields=['status', 'error_log'])
+        return {**base, 'status': 'failed', 'note': str(e)}
+    finally:
+        sys.stdout = old_stdout
+        captured_text = captured.getvalue()
+        if captured_text.strip():
+            log(f'[stdout] {captured_text.strip()}')
+
+    if pipeline_result is None:
+        raw.status = RawPosting.STATUS_SKIPPED
+        raw.processed_at = timezone.now()
+        raw.save(update_fields=['status', 'processed_at'])
+        log('  → 급여 미명시, 저장 건너뜀')
+        return {**base, 'status': 'skipped', 'note': '급여 미명시'}
+
+    # 지역 정규화 (JobPosting 생성 시점에 수행)
+    city_raw = raw.city
+    city = normalize_city(city_raw) or city_raw
+    big_category = raw.big_category or assign_big_category(city)
+
+    posting = JobPosting(
+        url=raw.url,
+        platform=raw.platform,
+        created_at=raw.created_at or None,
+        title=raw.title,
+        pharmacy_name=raw.pharmacy_name,
+        body=raw.body,
+        city=city,
+        big_category=big_category,
+        **pipeline_result,
+    )
+    posting.save()
+    raw.status = RawPosting.STATUS_PROCESSED
+    raw.processed_at = timezone.now()
+    raw.save(update_fields=['status', 'processed_at'])
+
+    if pipeline_result.get('gpt_error_log'):
+        log('  → 저장 완료 (has_error=True)')
+        return {**base, 'status': 'error', 'note': pipeline_result.get('gpt_error_log', '')[:200]}
+    log('  → 저장 완료 ✓')
+    return {**base, 'status': 'ok', 'note': ''}

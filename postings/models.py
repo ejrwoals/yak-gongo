@@ -155,3 +155,67 @@ class PipelineRun(models.Model):
 
     def __str__(self):
         return f"{self.source} | {self.started_at:%Y-%m-%d %H:%M} | {self.status}"
+
+
+class RawPosting(models.Model):
+    """크롤링 결과를 LLM 처리 전에 보관하는 스테이징 레코드.
+
+    스크래핑 단계가 공고를 한 건씩 즉시 여기에 저장하므로, 도중에 멈춰도
+    이미 긁은 공고는 남는다. LLM 처리 단계는 status='pending'인 레코드만
+    순회하여 JobPosting을 생성하고 status를 갱신한다. 따라서 두 단계 모두
+    멱등(idempotent)하며 재실행만으로 이어서 진행된다.
+    """
+    STATUS_PENDING = 'pending'
+    STATUS_PROCESSED = 'processed'
+    STATUS_SKIPPED = 'skipped_no_salary'
+    STATUS_ERROR = 'error'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, '처리 대기'),
+        (STATUS_PROCESSED, 'JobPosting 생성 완료'),
+        (STATUS_SKIPPED, '급여 미명시로 건너뜀'),
+        (STATUS_ERROR, '처리 중 에러'),
+    ]
+
+    # --- Raw posting content (스크래퍼가 반환하는 dict 키와 동일) ---
+    url = models.URLField(unique=True)
+    platform = models.CharField(max_length=50, blank=True)
+    created_at = models.DateField(null=True, blank=True, verbose_name='공고 날짜')
+    title = models.TextField(blank=True)
+    pharmacy_name = models.CharField(max_length=200, blank=True)
+    body = models.TextField(blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    big_category = models.CharField(max_length=50, blank=True)
+
+    # --- 처리 상태 추적 ---
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True,
+    )
+    error_log = models.TextField(blank=True)
+    run = models.ForeignKey(
+        PipelineRun, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='raw_postings', verbose_name='스크래핑 회차',
+    )
+    scraped_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-scraped_at']
+        indexes = [
+            models.Index(fields=['status']),
+        ]
+
+    def to_raw_dict(self) -> dict:
+        """스크래퍼 dict와 동일한 형태로 반환 (process 단계에서 사용)."""
+        return {
+            'url': self.url,
+            'platform': self.platform,
+            'created_at': self.created_at,
+            'title': self.title,
+            'pharmacy_name': self.pharmacy_name,
+            'body': self.body,
+            'city': self.city,
+            'big_category': self.big_category,
+        }
+
+    def __str__(self):
+        return f"[{self.status}] {self.title[:40]}"

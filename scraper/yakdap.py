@@ -39,6 +39,7 @@ def scrape(
     existing_urls: set[str] | None = None,
     login_event: threading.Event | None = None,
     log=None,
+    on_item=None,
 ) -> list[dict]:
     """
     약문약답 공고를 순회하여 raw posting dict 리스트를 반환.
@@ -50,6 +51,7 @@ def scrape(
         year:          등록일 연도 (약문약답은 월/일만 표시됨)
         headless:      헤드리스 모드 여부
         existing_urls: 이미 DB에 존재하는 URL 집합 (중복 스킵용)
+        on_item:       공고 1건을 수집할 때마다 호출되는 콜백(dict). 중간 저장용.
 
     Returns:
         list of dict with keys:
@@ -87,32 +89,35 @@ def scrape(
             time.sleep(1)
 
             try:
-                title_css = '#app > ion-app > main > section.title-container > h1'
+                # 사이트가 styled-components 해시 클래스(sc-*)를 쓰므로 재배포 시 클래스가 바뀐다.
+                # 따라서 바뀌지 않는 시맨틱 클래스(title-container, detail__*)와
+                # 표는 라벨 텍스트(XPath)를 기준으로 선택한다.
                 title = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, title_css))
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, 'main section.title-container h1'))
                 ).text
                 title = PLATFORM + ') ' + title
 
-                name_css = '#app > ion-app > main > section.sc-fTACoA.ktVljS > div > h4'
-                name = driver.find_element(By.CSS_SELECTOR, name_css).text
+                name = driver.find_element(
+                    By.CSS_SELECTOR, 'main .detail__pharmacy-name h4').text
 
-                address_css = '#app > ion-app > main > section.sc-fTACoA.ktVljS > span'
-                address = driver.find_element(By.CSS_SELECTOR, address_css).text
+                address = driver.find_element(
+                    By.CSS_SELECTOR, 'main .detail__pharmacy-address').text
 
-                date_css = '#app > ion-app > main > section.title-container > div.detail-title__bottom > span'
-                date_text = driver.find_element(By.CSS_SELECTOR, date_css).text
+                date_text = driver.find_element(
+                    By.CSS_SELECTOR, 'main section.title-container .detail-title__bottom > span').text
                 month = date_text.split('월')[0].split()[-1].zfill(2)
                 day = date_text.split('일')[0].split()[-1].zfill(2)
                 created_at = f'{year}-{month}-{day}'
 
-                salary_css = '#app > ion-app > main > section:nth-child(2) > table > tbody > tr:nth-child(1) > td.sc-fTNIjK.jUdFRA > div > span'
-                salary = driver.find_element(By.CSS_SELECTOR, salary_css).text
+                # 급여·근무시간: 표의 라벨 셀 텍스트로 같은 행의 값 셀(td[2])을 찾는다.
+                salary = driver.find_element(
+                    By.XPATH, '//main//tr[td/span[normalize-space(text())="급여"]]/td[2]').text
+                work_hours = driver.find_element(
+                    By.XPATH, '//main//tr[td/span[normalize-space(text())="근무시간"]]/td[2]').text
 
-                work_hours_css = '#app > ion-app > main > section:nth-child(2) > table > tbody > tr:nth-child(3) > td.sc-fTNIjK.jUdFRA > div'
-                work_hours = driver.find_element(By.CSS_SELECTOR, work_hours_css).text
-
-                body_css = '#app > ion-app > main > section.sc-fTACoA.ktVljS > pre'
-                body_text = driver.find_element(By.CSS_SELECTOR, body_css).text
+                body_text = driver.find_element(
+                    By.CSS_SELECTOR, 'main .detail__message').text
 
                 body = (
                     f'공고 제목 : {title}\n'
@@ -123,7 +128,7 @@ def scrape(
                     f'글 본문 : {body_text}'
                 )
 
-                results.append({
+                record = {
                     'url': cur_url,
                     'platform': PLATFORM,
                     'created_at': created_at,
@@ -131,7 +136,10 @@ def scrape(
                     'pharmacy_name': name,
                     'body': body,
                     'city': address,
-                })
+                }
+                if on_item is not None:
+                    on_item(record)
+                results.append(record)
                 _log(f'{num_id} 번 글 수집 완료 | {title} | {name} | {address} | {cur_url}')
 
             except Exception as e:

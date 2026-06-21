@@ -1,0 +1,54 @@
+{% comment %}pre-1단계 크롤링 실행 폼 fragment. #prestage-container에 주입되며, 제출은 대시보드 JS가 가로채 scrape-start로 POST한다.{% endcomment %}
+<div class="prestage-panel">
+  <div class="prestage-head">pre-1단계: 공고 크롤링</div>
+
+  {% if already_running %}
+  <div class="prestage-warn" style="display:flex; align-items:center; gap:10px;">
+    <span>이미 실행 중인 작업이 있습니다 (Run #{{ already_running.id }}).</span>
+    <button type="button" id="view-running-log" class="ps-run-btn"
+            data-status-url="{{ running_status_url }}"
+            data-confirm-url="{{ running_confirm_url }}">로그 보기</button>
+  </div>
+  {% endif %}
+
+  <form id="scrape-form" class="prestage-form">
+    <div class="ps-row">
+      <label class="ps-label">소스</label>
+      <div>
+        {% for radio in form.source %}
+          <label style="margin-right: 16px;">{{ radio.tag }} {{ radio.choice_label }}</label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div id="ps-yakdap">
+      <div class="ps-row"><label class="ps-label">{{ form.start_id.label }}</label>{{ form.start_id }}</div>
+      <div class="ps-row"><label class="ps-label">{{ form.count.label }}</label>{{ form.count }}</div>
+      <div class="ps-row"><label class="ps-label">{{ form.step.label }}</label>{{ form.step }}</div>
+    </div>
+
+    <div id="ps-pharm" style="display:none;">
+      <div class="ps-row">
+        <label class="ps-label">{{ form.big_categories.label }}</label>
+        <div>
+          {% for checkbox in form.big_categories %}
+            <label style="display:inline-block; margin-right:12px;">{{ checkbox.tag }} {{ checkbox.choice_label }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="ps-row"><label class="ps-label">{{ form.pharm_count.label }}</label>{{ form.pharm_count }}</div>
+    </div>
+
+    <div class="ps-row"><label class="ps-label">{{ form.year.label }}</label>{{ form.year }}</div>
+    <div class="ps-row">
+      <label class="ps-label">{{ form.headless.label }}</label>
+      {{ form.headless }}
+      <span class="ps-help">{{ form.headless.help_text }}</span>
+    </div>
+
+    <p class="ps-note">크롤링하여 RawPosting까지만 저장합니다. 이후 <b>pre-2단계: LLM 프로세싱</b>에서 처리하세요.
+      야크답은 카카오 로그인이 필요하여 시작 후 로그 페이지로 이동합니다.</p>
+
+    <button type="submit" class="ps-run-btn" {% if already_running %}disabled{% endif %}>크롤링 시작</button>
+  </form>
+</div>

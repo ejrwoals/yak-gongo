@@ -6,6 +6,20 @@
 {% csrf_token %}
 <h1>공고 리뷰 대시보드</h1>
 
+<!-- pre-단계: 크롤링 / LLM 프로세싱 -->
+<div id="prestage-tabs">
+  <div class="preset-group">
+    <span class="group-label">pre-1단계: 공고 크롤링</span>
+    <button class="prestage-btn" data-prestage="scrape">크롤링 실행</button>
+  </div>
+  <div class="preset-group">
+    <span class="group-label">pre-2단계: LLM 프로세싱</span>
+    <button class="prestage-btn" data-prestage="process">
+      처리 대기 <span class="badge" id="count-pending_raw">-</span>
+    </button>
+  </div>
+</div>
+
 <!-- 프리셋 탭 -->
 <div id="preset-tabs">
   {% for group_name, presets in grouped_presets %}
@@ -85,6 +99,53 @@
     background: #ddd; border-radius: 10px; font-size: 11px; text-align: center;
   }
   .preset-btn.active .badge { background: rgba(255,255,255,0.3); }
+
+  /* pre-단계 탭/패널 */
+  #prestage-tabs { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 2px dashed #d9d9d9; }
+  .prestage-btn {
+    padding: 6px 14px; border: 1px solid #b8b0d6; background: #f4f1fb;
+    border-radius: 4px; cursor: pointer; font-size: 13px; color: #4a3b86;
+  }
+  .prestage-btn:hover { background: #e9e3f7; }
+  .prestage-btn.active { background: #6f42c1; color: #fff; border-color: #6f42c1; }
+  .prestage-btn.active .badge { background: rgba(255,255,255,0.3); }
+  .prestage-panel {
+    border: 1px solid #e0d9f0; border-radius: 6px; padding: 14px 16px; background: #faf9fe;
+  }
+  .prestage-head { font-weight: bold; font-size: 14px; color: #4a3b86; margin-bottom: 10px; }
+  .prestage-warn {
+    margin-bottom: 10px; padding: 7px 12px; background: #fff3cd; border-left: 3px solid #ffc107;
+    border-radius: 0 4px 4px 0; font-size: 13px;
+  }
+  .prestage-form .ps-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .ps-label { min-width: 110px; font-weight: bold; font-size: 13px; color: #555; }
+  .ps-help { font-size: 12px; color: #888; }
+  .ps-note { font-size: 12.5px; color: #666; margin: 10px 0; line-height: 1.6; }
+  .ps-run-btn {
+    padding: 7px 18px; background: #6f42c1; color: #fff; border: none;
+    border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .ps-run-btn:hover { background: #5a32a3; }
+  .ps-run-btn:disabled { background: #b9a6dd; cursor: default; }
+  /* 프리셋 컨트롤바와 동일한 레이아웃: 정렬(좌) / 액션(우) */
+  .prestage-controls {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; padding: 8px 12px; background: #f0f0f0; border-radius: 4px;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .prestage-controls-left, .prestage-controls-right { display: flex; align-items: center; gap: 10px; }
+  .prestage-table { margin-top: 4px; }
+  .prestage-desc {
+    margin-bottom: 10px; padding: 8px 14px; background: #eef6fc; border-left: 3px solid #6f42c1;
+    font-size: 13px; color: #333; border-radius: 0 4px 4px 0; line-height: 1.6;
+  }
+  .ps-sort-label { font-size: 13px; color: #555; }
+  .ps-sort-label select { padding: 4px 8px; }
+  .ps-sort-toggle {
+    padding: 4px 12px; border: 1px solid #999; background: #fff;
+    border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold;
+  }
+  .ps-sort-toggle:hover { background: #eee; }
 
   /* 프리셋 설명 */
   #preset-description {
@@ -312,6 +373,7 @@
   function activatePreset(key) {
     const preset = PRESETS[key];
 
+    clearPrestage();
     document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
     const btn = document.querySelector(`.preset-btn[data-preset="${key}"]`);
     if (btn) btn.classList.add('active');
@@ -757,6 +819,280 @@
       },
       onClosed: function() { loadCounts(); loadData(); },
     });
+  }
+
+  // ── pre-단계 (크롤링 / LLM 프로세싱) ──────────────────────────
+  // 상세 패널은 프리셋과 동일한 하단 영역(#table-container)에 렌더한다.
+  const prestageContainer = document.getElementById('table-container');
+
+  function resetDetail() {
+    prestageContainer.innerHTML =
+      '<p style="text-align:center; color:#666; padding:40px;">프리셋을 선택하세요.</p>';
+  }
+
+  function clearPrestage() {
+    document.querySelectorAll('.prestage-btn').forEach(b => b.classList.remove('active'));
+  }
+
+  document.querySelectorAll('.prestage-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const kind = this.dataset.prestage;
+      const wasActive = this.classList.contains('active');
+      clearPrestage();
+      if (wasActive) { resetDetail(); return; }  // 토글: 다시 누르면 닫기
+
+      this.classList.add('active');
+      // 프리셋 영역 비활성화 (충돌 방지)
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('preset-description').style.display = 'none';
+      document.getElementById('controls-bar').style.display = 'none';
+      state.preset = null;
+      loadPrestage(kind);
+    });
+  });
+
+  const pendingSort = { field: 'scraped_at', dir: 'asc' };
+
+  function loadPrestage(kind) {
+    prestageContainer.innerHTML = '<p style="text-align:center;color:#666;padding:20px;">불러오는 중…</p>';
+    const url = kind === 'scrape'
+      ? 'prestage/scrape-form/'
+      : `prestage/pending/?sort=${pendingSort.field}&sort_dir=${pendingSort.dir}`;
+    fetch(url)
+      .then(r => r.text())
+      .then(html => {
+        prestageContainer.innerHTML = html;
+        if (kind === 'scrape') initScrapeForm();
+        else initPendingTable();
+      })
+      .catch(() => { prestageContainer.innerHTML = '<p style="color:red;text-align:center;">로드 실패</p>'; });
+  }
+
+  // pre-1단계: 크롤링 폼
+  function initScrapeForm() {
+    // 이미 실행 중인 작업의 로그를 대시보드 안에서 보기 (페이지 이동 없이)
+    const viewLogBtn = document.getElementById('view-running-log');
+    if (viewLogBtn) viewLogBtn.addEventListener('click', function() {
+      showScrapeLog({ status_url: this.dataset.statusUrl, confirm_url: this.dataset.confirmUrl });
+    });
+
+    const form = document.getElementById('scrape-form');
+    if (!form) return;
+    const radios = form.querySelectorAll('input[name="source"]');
+    const yak = form.querySelector('#ps-yakdap');
+    const pharm = form.querySelector('#ps-pharm');
+    const headless = form.querySelector('#id_headless');
+
+    function toggle() {
+      let sel = '';
+      radios.forEach(r => { if (r.checked) sel = r.value; });
+      if (yak) yak.style.display = sel === 'yakdap' ? '' : 'none';
+      if (pharm) pharm.style.display = sel === 'pharm_recruit' ? '' : 'none';
+      if (headless) {
+        if (sel === 'yakdap') { headless.checked = false; headless.disabled = true; }
+        else { headless.disabled = false; }
+      }
+    }
+    radios.forEach(r => r.addEventListener('change', toggle));
+    toggle();
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const btn = form.querySelector('.ps-run-btn');
+      if (btn.disabled) return;
+      btn.disabled = true; btn.textContent = '시작 중…';
+      fetch('prestage/scrape-start/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: new FormData(form),
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (res.ok) { showScrapeLog(res); return; }   // 페이지 이동 없이 대시보드 내 로그 표시
+          btn.disabled = false; btn.textContent = '크롤링 시작';
+          if (res.status_url && confirm((res.error || '실행 불가') + '\n실행 중인 작업 로그를 여기서 볼까요?')) {
+            showScrapeLog(res);
+          } else {
+            alert(res.error || '시작 실패');
+          }
+        })
+        .catch(() => { alert('요청 실패'); btn.disabled = false; btn.textContent = '크롤링 시작'; });
+    });
+  }
+
+  // pre-1단계: 크롤링 실시간 로그를 대시보드 안에서 표시 (1초 폴링)
+  function showScrapeLog(res) {
+    const statusUrl = res.status_url;
+    const confirmUrl = res.confirm_url || (statusUrl || '').replace('/status/', '/confirm-login/');
+    prestageContainer.innerHTML =
+      '<div class="prestage-panel">' +
+        '<div class="prestage-head">pre-1단계: 공고 크롤링 — ' +
+          '<span id="scrape-status" style="color:#fd7e14;">실행 중</span>' +
+          '<span id="scrape-stat" style="font-weight:normal;color:#666;font-size:12px;margin-left:8px;"></span>' +
+          '<span id="scrape-live" style="font-weight:normal;color:#999;font-size:12px;margin-left:8px;">● 실시간</span>' +
+        '</div>' +
+        '<div id="scrape-login-box" class="prestage-warn" style="display:none;align-items:center;gap:10px;">' +
+          '<span>브라우저에서 카카오 로그인을 완료한 뒤 버튼을 눌러주세요.</span>' +
+          '<button type="button" id="scrape-login-btn" class="ps-run-btn">로그인 완료</button>' +
+        '</div>' +
+        '<pre id="scrape-log" style="background:#1e1e1e;color:#d4d4d4;padding:14px;border-radius:4px;' +
+          'font-size:12.5px;line-height:1.6;max-height:460px;overflow-y:auto;white-space:pre-wrap;' +
+          'word-break:break-all;margin:0;"></pre>' +
+        '<div id="scrape-done-actions" style="display:none;margin-top:10px;">' +
+          '<button type="button" class="ps-run-btn" id="scrape-goto-process">pre-2단계: LLM 프로세싱으로 →</button>' +
+        '</div>' +
+      '</div>';
+
+    const logBox = document.getElementById('scrape-log');
+    const statusEl = document.getElementById('scrape-status');
+    const statEl = document.getElementById('scrape-stat');
+    const liveEl = document.getElementById('scrape-live');
+    const loginBox = document.getElementById('scrape-login-box');
+    const loginBtn = document.getElementById('scrape-login-btn');
+
+    loginBtn.addEventListener('click', function() {
+      loginBtn.disabled = true; loginBtn.textContent = '전송 중…';
+      fetch(confirmUrl, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) { loginBox.style.display = 'none'; }
+          else { loginBtn.disabled = false; loginBtn.textContent = '로그인 완료'; }
+        })
+        .catch(() => { loginBtn.disabled = false; loginBtn.textContent = '로그인 완료'; });
+    });
+
+    let stopped = false;
+    function poll() {
+      if (stopped || !document.body.contains(logBox)) return;  // 패널이 닫혔으면 폴링 중단
+      fetch(statusUrl)
+        .then(r => r.json())
+        .then(d => {
+          const atBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 40;
+          logBox.textContent = d.log_output || '';
+          if (atBottom) logBox.scrollTop = logBox.scrollHeight;
+          statEl.textContent = `수집 ${d.total_scraped}개`;
+          loginBox.style.display = d.waiting_login ? 'flex' : 'none';
+          if (d.status === 'running') {
+            setTimeout(poll, 1000);
+          } else {
+            stopped = true;
+            liveEl.style.display = 'none';
+            statusEl.textContent = d.status === 'done' ? '완료 ✓' : '실패 ✗';
+            statusEl.style.color = d.status === 'done' ? '#28a745' : '#dc3545';
+            if (d.status === 'done') document.getElementById('scrape-done-actions').style.display = '';
+            loadCounts();  // pre-2 처리 대기 뱃지 갱신
+          }
+        })
+        .catch(() => setTimeout(poll, 2000));
+    }
+    poll();
+
+    const gotoBtn = document.getElementById('scrape-goto-process');
+    if (gotoBtn) gotoBtn.addEventListener('click', function() {
+      const processBtn = document.querySelector('.prestage-btn[data-prestage="process"]');
+      if (processBtn) processBtn.click();
+    });
+  }
+
+  // pre-2단계: 처리 대기 목록 + 선택 처리
+  function initPendingTable() {
+    // 정렬 컨트롤 (목록이 비어도 동작)
+    const sortSel = document.getElementById('pending-sort');
+    const sortToggle = document.getElementById('pending-sort-toggle');
+    if (sortSel) sortSel.addEventListener('change', function() {
+      pendingSort.field = this.value;
+      loadPrestage('process');
+    });
+    if (sortToggle) sortToggle.addEventListener('click', function() {
+      pendingSort.dir = pendingSort.dir === 'asc' ? 'desc' : 'asc';
+      loadPrestage('process');
+    });
+
+    const btn = document.getElementById('process-selected-btn');
+    if (!btn) return;  // 대기 0건
+    btn.disabled = false;
+    const selectAll = document.getElementById('pending-select-all');
+
+    function updateCount() {
+      const n = prestageContainer.querySelectorAll('.pending-select:checked').length;
+      document.getElementById('process-selected-count').textContent = n;
+    }
+    if (selectAll) selectAll.addEventListener('change', function() {
+      prestageContainer.querySelectorAll('.pending-select').forEach(cb => { cb.checked = this.checked; });
+      updateCount();
+    });
+    prestageContainer.querySelectorAll('.pending-select').forEach(cb =>
+      cb.addEventListener('change', updateCount));
+
+    btn.addEventListener('click', function() {
+      let checked = Array.from(prestageContainer.querySelectorAll('.pending-select:checked'));
+      if (checked.length === 0) checked = Array.from(prestageContainer.querySelectorAll('.pending-select'));
+      const items = checked.map(cb => {
+        const tr = cb.closest('tr.pending-row');
+        const titleEl = tr && tr.querySelector('.cell-title');
+        return { id: parseInt(cb.value), title: titleEl ? titleEl.textContent.trim() : '' };
+      });
+      runProcess(items);
+    });
+  }
+
+  // 진행 모달을 재사용한 건별 LLM 처리 실행
+  function runProcess(items) {
+    if (!items.length) { alert('처리할 공고가 없습니다.'); return; }
+    if (!confirm(`${items.length}건을 LLM으로 처리하여 JobPosting을 생성합니다.\nAPI 비용이 발생하며 시간이 걸릴 수 있습니다. 진행할까요?`)) return;
+
+    const total = items.length;
+    const tally = { ok: 0, error: 0, failed: 0, skipped: 0, done: 0 };
+    verifyRun.running = true; verifyRun.stop = false;
+
+    document.getElementById('verify-modal-title').textContent = '🔧 LLM 프로세싱';
+    document.getElementById('verify-log').innerHTML = '';
+    document.getElementById('verify-progress-bar').style.width = '0';
+    const stopBtn = document.getElementById('verify-stop-btn');
+    const closeBtn = document.getElementById('verify-close-btn');
+    stopBtn.disabled = false; stopBtn.textContent = '중지'; stopBtn.style.display = '';
+    closeBtn.disabled = true;
+    document.getElementById('verify-modal').style.display = 'flex';
+    verifyUpdateSummary(total, tally);
+
+    function finish(stopped) {
+      verifyRun.running = false;
+      stopBtn.style.display = 'none';
+      closeBtn.disabled = false;
+      document.getElementById('verify-summary').insertAdjacentHTML(
+        'beforeend', `<span class="vs-count">${stopped ? '⏹ 중지됨' : '✅ 완료'}</span>`);
+      loadCounts();
+      loadPrestage('process');  // 대기 목록 갱신
+    }
+
+    function processNext(i) {
+      if (verifyRun.stop) { finish(true); return; }
+      if (i >= items.length) { finish(false); return; }
+      const cur = items[i];
+      const row = verifyAppendRow({ id: cur.id, status: 'running', title: cur.title || '(제목 없음)', note: '처리 중…' });
+      fetch('prestage/process-one/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ id: cur.id }),
+      })
+        .then(r => r.json())
+        .then(res => {
+          const item = (res.ok && res.result) || { id: cur.id, status: 'failed', note: res.error || '요청 실패' };
+          if (!item.title) item.title = cur.title || '';
+          verifySetRow(row, item);
+          if (tally[item.status] !== undefined) tally[item.status]++;
+          tally.done++;
+          verifyUpdateSummary(total, tally);
+          processNext(i + 1);
+        })
+        .catch(() => {
+          verifySetRow(row, { id: cur.id, status: 'failed', title: cur.title || '', note: '네트워크 오류' });
+          tally.failed++; tally.done++;
+          verifyUpdateSummary(total, tally);
+          processNext(i + 1);
+        });
+    }
+    processNext(0);
   }
 
   // 초기화

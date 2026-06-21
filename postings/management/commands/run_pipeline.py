@@ -1,25 +1,20 @@
-"""
-management command: python manage.py run_pipeline --source <yakdap|pharm_recruit>
+"""management command: 크롤링 + LLM 처리를 한 번에 실행하는 오케스트레이터.
 
-yakdap 예시:
     python manage.py run_pipeline --source yakdap --start-id 38800 --count 100 --step 2 --year 2024
-
-pharm_recruit 예시:
     python manage.py run_pipeline --source pharm_recruit --big-category 서울 --year 2026
-"""
-import io
-import sys
-import threading
 
+내부적으로 두 단계를 순서대로 실행한다:
+  1) scrape_stage  : 공고를 크롤링하여 RawPosting(스테이징)으로 즉시 저장
+  2) process_stage : pending RawPosting을 LLM 처리하여 JobPosting 생성
+
+두 단계 모두 멱등하므로 도중에 멈춰도 같은 명령을 다시 실행하면 이어서 진행된다.
+단계를 따로 돌리려면 scrape_postings / process_postings 명령을 사용한다.
+"""
 from django.core.management.base import BaseCommand
-from django.conf import settings
 from django.utils import timezone
 
-from google import genai
-
-from postings.models import JobPosting, PipelineRun
-from pipeline.runner import process_posting
-from geo.mapping import normalize_city, assign_big_category
+from postings.models import PipelineRun
+from pipeline.stages import scrape_stage, process_stage
 
 
 class Command(BaseCommand):
@@ -39,7 +34,7 @@ class Command(BaseCommand):
         # 공통
         parser.add_argument('--headless', action='store_true', default=False)
         parser.add_argument('--dry-run', action='store_true', default=False,
-                            help='스크래핑만 하고 LLM 처리 및 DB 저장은 건너뜁니다.')
+                            help='스크래핑(RawPosting 저장)만 하고 LLM 처리는 건너뜁니다.')
         # Admin UI 연동용: 미리 생성된 PipelineRun ID
         parser.add_argument('--run-id', type=int, default=None,
                             help='Admin UI에서 미리 생성된 PipelineRun ID (내부용)')
@@ -48,205 +43,58 @@ class Command(BaseCommand):
         source = options['source']
         dry_run = options['dry_run']
         run_id = options['run_id']
-
-        existing_urls: set[str] = set(
-            JobPosting.objects.values_list('url', flat=True)
-        )
-        self.stdout.write(f'기존 URL {len(existing_urls)}개 로드 완료')
-
         login_event = options.get('login_event')
 
-        # 스크래핑 단계용 로그 콜백 (DB에 실시간 기록)
-        def _scrape_log(msg: str):
-            self.stdout.write(msg)
-            if run_id:
-                try:
-                    run = PipelineRun.objects.get(id=run_id)
-                    run.log_output += msg + '\n'
-                    run.save(update_fields=['log_output'])
-                except PipelineRun.DoesNotExist:
-                    pass
-
-        # ── 스크래핑 ──────────────────────────────────────────────
-        if source == 'yakdap':
-            from scraper.yakdap import scrape
-            raw_postings = scrape(
-                start_id=options['start_id'],
-                count=options['count'],
-                step=options['step'],
-                year=options['year'],
-                headless=options['headless'],
-                existing_urls=existing_urls,
-                login_event=login_event,
-                log=_scrape_log,
-            )
-        else:
-            import math as _math
-            from scraper.pharm_recruit import scrape
-            big_categories = options.get('big_categories') or options.get('big_category') or ['서울']
-            if isinstance(big_categories, str):
-                big_categories = [big_categories]
-            pharm_count = options.get('pharm_count')
-            per_category = (
-                _math.ceil(pharm_count / len(big_categories)) if pharm_count else None
-            )
-            raw_postings = []
-            for big_cat in big_categories:
-                limit_msg = f' (최대 {per_category}개)' if per_category else ' (전체)'
-                _scrape_log(f'[{big_cat}] 스크래핑 시작{limit_msg}')
-                raw_postings += scrape(
-                    big_category=big_cat,
-                    year=options['year'],
-                    headless=options['headless'],
-                    existing_urls=existing_urls,
-                    category_limit=per_category,
-                    log=_scrape_log,
-                )
-
-        self.stdout.write(f'스크래핑 완료: {len(raw_postings)}개')
-
-        if dry_run:
-            dry_log_lines = [f'스크래핑 완료: {len(raw_postings)}개\n']
-            for i, raw in enumerate(raw_postings, start=1):
-                line = (
-                    f'[{i}/{len(raw_postings)}] '
-                    f'{raw.get("title", "(제목 없음)")} | '
-                    f'{raw.get("pharmacy_name", "")} | '
-                    f'{raw.get("city", "")} | '
-                    f'{raw.get("url", "")}'
-                )
-                self.stdout.write(line)
-                dry_log_lines.append(line + '\n')
-            dry_log_lines.append('[dry-run] LLM 처리 및 DB 저장 건너뜀\n')
-            self.stdout.write('[dry-run] LLM 처리 및 DB 저장 건너뜀')
-            if run_id:
-                run = PipelineRun.objects.get(id=run_id)
-                run.total_scraped = len(raw_postings)
-                run.status = 'done'
-                run.finished_at = timezone.now()
-                run.log_output += ''.join(dry_log_lines)
-                run.save()
-            return
-
-        # ── PipelineRun 레코드 준비 ───────────────────────────────
         if run_id:
             run = PipelineRun.objects.get(id=run_id)
-            run.total_scraped = len(raw_postings)
-            run.log_output += f'스크래핑 완료: {len(raw_postings)}개\n'
-            run.save()
         else:
             run = PipelineRun.objects.create(
                 source=source,
-                started_at=timezone.now(),
-                total_scraped=len(raw_postings),
                 status='running',
-                log_output=f'스크래핑 완료: {len(raw_postings)}개\n',
+                log_output='파이프라인 시작...\n',
             )
 
-        # ── 로그 누적 헬퍼 ────────────────────────────────────────
-        _log_buffer = []
-        _log_lock = threading.Lock()
-
-        def _flush_log(force=False):
-            with _log_lock:
-                if _log_buffer and (force or len(_log_buffer) >= 10):
-                    run.log_output += ''.join(_log_buffer)
-                    _log_buffer.clear()
-                    run.save(update_fields=['log_output', 'total_processed', 'total_errors'])
+        # 로그를 stdout + run.log_output에 기록.
+        # 대시보드/로그 패널이 거의 실시간으로 보이도록 한 줄마다 즉시 DB에 반영한다.
+        buffer = []
 
         def _log(msg: str):
             self.stdout.write(msg)
-            with _log_lock:
-                _log_buffer.append(msg + '\n')
+            run.log_output += msg + '\n'
+            run.save(update_fields=['log_output', 'total_scraped', 'total_processed', 'total_errors'])
 
-        # ── LLM 파이프라인 ─────────────────────────────────────────
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-        model_name = settings.LLM_MODEL
+        def _flush():
+            if buffer:
+                run.log_output += ''.join(buffer)
+                buffer.clear()
+            run.save()
 
-        total_processed = 0
-        total_errors = 0
-        total_skipped_no_salary = 0
+        try:
+            # ── 1단계: 스크래핑 → RawPosting ──────────────────────────
+            scrape_stage(source, options, run, login_event=login_event, log=_log)
 
-        for idx, raw in enumerate(raw_postings, start=1):
-            url = raw['url']
-            title = raw.get('title', '')
+            if dry_run:
+                _log('[dry-run] LLM 처리 건너뜀 (RawPosting까지만 저장)')
+                run.status = 'done'
+                run.finished_at = timezone.now()
+                _flush()
+                self.stdout.write(self.style.SUCCESS(f'[dry-run] 스크래핑 완료: {run.total_scraped}개'))
+                return
 
-            if JobPosting.objects.filter(url=url).exists():
-                _log(f'[SKIP] {url}')
-                _flush_log()
-                continue
+            # ── 2단계: pending RawPosting → LLM → JobPosting ──────────
+            stats = process_stage(run, log=_log)
+        except Exception as e:
+            _log(f'\n[FATAL ERROR] {e}')
+            run.status = 'failed'
+            run.finished_at = timezone.now()
+            _flush()
+            raise
 
-            _log(f'\n{"━"*10} [{idx}/{len(raw_postings)}] {"━"*10}')
-            _log(f'URL  : {url}')
-            _log(f'제목 : {title}')
-
-            body = raw.get('body', '')
-
-            # stdout 캡처 (tasks/validator의 print() 포함)
-            captured = io.StringIO()
-            old_stdout = sys.stdout
-            sys.stdout = captured
-            try:
-                pipeline_result = process_posting(body, client, model_name, log=_log)
-            except Exception as e:
-                sys.stdout = old_stdout
-                _log(f'[PIPELINE ERROR] {url}: {e}')
-                total_errors += 1
-                run.total_errors = total_errors
-                _flush_log(force=True)
-                continue
-            finally:
-                sys.stdout = old_stdout
-                captured_text = captured.getvalue()
-                if captured_text.strip():
-                    _log(f'[stdout] {captured_text.strip()}')
-
-            if pipeline_result is None:
-                total_skipped_no_salary += 1
-                _log('  → 급여 미명시, 저장 건너뜀')
-                _flush_log()
-                continue
-
-            # 지역 정규화
-            city_raw = raw.get('city', '')
-            city = normalize_city(city_raw) or city_raw
-            big_category = raw.get('big_category') or assign_big_category(city)
-
-            posting = JobPosting(
-                url=url,
-                platform=raw.get('platform', ''),
-                created_at=raw.get('created_at') or None,
-                title=title,
-                pharmacy_name=raw.get('pharmacy_name', ''),
-                body=body,
-                city=city,
-                big_category=big_category,
-                **pipeline_result,
-            )
-            posting.save()
-            total_processed += 1
-            run.total_processed = total_processed
-
-            if pipeline_result.get('gpt_error_log'):
-                total_errors += 1
-                run.total_errors = total_errors
-                _log('  → 저장 완료 (has_error=True)')
-            else:
-                _log('  → 저장 완료 ✓')
-
-            _flush_log()
-
-        # ── 완료 처리 ─────────────────────────────────────────────
-        _log(f'\n{"="*40}')
-        _log(f'완료: {total_processed}개 저장, {total_errors}개 에러')
-        if total_skipped_no_salary:
-            _log(f'{total_skipped_no_salary}개 급여 미명시 건너뜀')
-        run.finished_at = timezone.now()
         run.status = 'done'
-        _flush_log(force=True)
-        run.save()
+        run.finished_at = timezone.now()
+        _flush()
 
-        self.stdout.write(
-            self.style.SUCCESS(f'완료: {total_processed}개 저장, {total_errors}개 에러' +
-                               (f', {total_skipped_no_salary}개 급여 미명시 건너뜀' if total_skipped_no_salary else ''))
-        )
+        msg = f"완료: {stats['processed']}개 저장, {stats['errors']}개 에러"
+        if stats['skipped']:
+            msg += f", {stats['skipped']}개 급여 미명시 건너뜀"
+        self.stdout.write(self.style.SUCCESS(msg))

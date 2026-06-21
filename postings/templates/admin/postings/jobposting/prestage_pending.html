@@ -1,0 +1,62 @@
+{% comment %}pre-2단계 LLM 처리 대기(RawPosting pending) 목록 fragment. #table-container에 주입.{% endcomment %}
+<div class="prestage-panel">
+  <div class="prestage-desc">
+    크롤링은 완료됐지만 아직 LLM 처리되지 않은 공고들입니다. 행을 선택해 처리하거나,
+    체크 없이 처리 버튼을 누르면 표시된 전체를 처리합니다. 각 공고는 LLM 5-task 파이프라인을
+    거쳐 JobPosting으로 저장됩니다.
+  </div>
+
+  {% if total == 0 %}
+    <p style="text-align:center; color:#666; padding:30px;">
+      처리 대기 중인 공고가 없습니다. pre-1단계에서 먼저 크롤링하세요.
+    </p>
+  {% else %}
+    <div class="prestage-controls">
+      <div class="prestage-controls-left">
+        <label class="ps-sort-label">정렬:
+          <select id="pending-sort">
+            {% for opt in sort_options %}
+            <option value="{{ opt.value }}" {% if opt.selected %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="button" id="pending-sort-toggle" class="ps-sort-toggle" data-dir="{{ sort_dir }}">{{ sort_dir|upper }}</button>
+      </div>
+      <div class="prestage-controls-right">
+        <span class="ps-help">체크 없이 누르면 표시된 전체를 처리합니다.</span>
+        <button type="button" id="process-selected-btn" class="ps-run-btn" disabled>
+          선택 항목 LLM 처리 (<span id="process-selected-count">0</span>건)
+        </button>
+      </div>
+    </div>
+
+    {% if truncated %}
+    <div class="prestage-warn">대기 {{ total }}건 중 최근 {{ max_rows }}건만 표시합니다.</div>
+    {% endif %}
+
+    <table class="review-table prestage-table">
+      <thead>
+        <tr>
+          <th style="width:32px;"><input type="checkbox" id="pending-select-all"></th>
+          <th>제목</th>
+          <th>약국</th>
+          <th>플랫폼</th>
+          <th>지역</th>
+          <th>수집 시각</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="pending-row" data-id="{{ r.id }}">
+          <td><input type="checkbox" class="pending-select" value="{{ r.id }}"></td>
+          <td><span class="cell-title">{{ r.title|default:"(제목 없음)" }}</span></td>
+          <td>{{ r.pharmacy_name }}</td>
+          <td>{{ r.platform }}</td>
+          <td>{{ r.city }}</td>
+          <td>{{ r.scraped_at|date:"m-d H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
