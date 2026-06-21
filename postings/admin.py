@@ -11,6 +11,8 @@ from django.utils import timezone
 from django.utils.html import format_html
 from rangefilter.filters import DateRangeFilterBuilder, NumericRangeFilterBuilder
 
+from geo.mapping import normalize_city
+
 from .dashboard_stats import compute_dashboard_data
 from .dataframe import build_dataframe
 from .forms import PipelineRunForm
@@ -405,7 +407,6 @@ class JobPostingAdmin(admin.ModelAdmin):
 
     def prestage_pending_view(self, request):
         """AJAX GET: pre-2단계 — LLM 처리 대기(RawPosting pending) 목록 fragment."""
-        MAX_ROWS = 500
         valid = {f for f, _ in self.PENDING_SORT_FIELDS}
         sort = request.GET.get('sort', 'scraped_at')
         if sort not in valid:
@@ -416,17 +417,23 @@ class JobPostingAdmin(admin.ModelAdmin):
         order = ('-' if sort_dir == 'desc' else '') + sort
 
         qs = RawPosting.objects.filter(status=RawPosting.STATUS_PENDING).order_by(order, 'id')
-        total = qs.count()
-        rows = list(qs[:MAX_ROWS])
+        paginator = Paginator(qs, 25)
+        page_obj = paginator.get_page(request.GET.get('page', '1'))
+
+        # 표시용 지역명: yakdap은 city에 전체 주소가 들어가므로 정규화해서 보여준다
+        # (raw city는 JobPosting 생성 시점에 normalize_city로 처리되므로 원본은 보존).
+        rows = list(page_obj)
+        for r in rows:
+            r.city_display = normalize_city(r.city) or r.city if r.city else ''
+
         sort_options = [
             {'value': f, 'label': label, 'selected': f == sort}
             for f, label in self.PENDING_SORT_FIELDS
         ]
         return render(request, 'admin/postings/jobposting/prestage_pending.html', {
             'rows': rows,
-            'total': total,
-            'truncated': total > MAX_ROWS,
-            'max_rows': MAX_ROWS,
+            'page_obj': page_obj,
+            'total': paginator.count,
             'sort_options': sort_options,
             'sort_dir': sort_dir,
         })

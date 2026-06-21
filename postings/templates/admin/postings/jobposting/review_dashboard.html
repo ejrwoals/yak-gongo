@@ -859,17 +859,19 @@
       document.getElementById('preset-description').style.display = 'none';
       document.getElementById('controls-bar').style.display = 'none';
       state.preset = null;
+      if (kind === 'process') pendingPage = 1;  // 탭 새로 열 때 1페이지부터
       loadPrestage(kind);
     });
   });
 
   const pendingSort = { field: 'scraped_at', dir: 'asc' };
+  let pendingPage = 1;
 
   function loadPrestage(kind) {
     prestageContainer.innerHTML = '<p style="text-align:center;color:#666;padding:20px;">불러오는 중…</p>';
     const url = kind === 'scrape'
       ? 'prestage/scrape-form/'
-      : `prestage/pending/?sort=${pendingSort.field}&sort_dir=${pendingSort.dir}`;
+      : `prestage/pending/?sort=${pendingSort.field}&sort_dir=${pendingSort.dir}&page=${pendingPage}`;
     fetch(url)
       .then(r => r.text())
       .then(html => {
@@ -951,7 +953,7 @@
           'font-size:12.5px;line-height:1.6;max-height:460px;overflow-y:auto;white-space:pre-wrap;' +
           'word-break:break-all;margin:0;"></pre>' +
         '<div id="scrape-done-actions" style="display:none;margin-top:10px;">' +
-          '<button type="button" class="ps-run-btn" id="scrape-goto-process">pre-2단계: LLM 프로세싱으로 →</button>' +
+          '<button type="button" class="ps-run-btn" id="scrape-back-settings">← 크롤링 설정으로 돌아가기</button>' +
         '</div>' +
       '</div>';
 
@@ -999,10 +1001,10 @@
     }
     poll();
 
-    const gotoBtn = document.getElementById('scrape-goto-process');
-    if (gotoBtn) gotoBtn.addEventListener('click', function() {
-      const processBtn = document.querySelector('.prestage-btn[data-prestage="process"]');
-      if (processBtn) processBtn.click();
+    const backBtn = document.getElementById('scrape-back-settings');
+    if (backBtn) backBtn.addEventListener('click', function() {
+      const scrapeBtn = document.querySelector('.prestage-btn[data-prestage="scrape"]');
+      if (scrapeBtn) scrapeBtn.click();
     });
   }
 
@@ -1013,12 +1015,21 @@
     const sortToggle = document.getElementById('pending-sort-toggle');
     if (sortSel) sortSel.addEventListener('change', function() {
       pendingSort.field = this.value;
+      pendingPage = 1;
       loadPrestage('process');
     });
     if (sortToggle) sortToggle.addEventListener('click', function() {
       pendingSort.dir = pendingSort.dir === 'asc' ? 'desc' : 'asc';
+      pendingPage = 1;
       loadPrestage('process');
     });
+
+    // 페이지네이션 (pending 목록 전용)
+    prestageContainer.querySelectorAll('.page-btn').forEach(b =>
+      b.addEventListener('click', function() {
+        pendingPage = parseInt(this.dataset.page);
+        loadPrestage('process');
+      }));
 
     const btn = document.getElementById('process-selected-btn');
     if (!btn) return;  // 대기 0건

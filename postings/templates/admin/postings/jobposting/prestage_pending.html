@@ -30,10 +30,6 @@
       </div>
     </div>
 
-    {% if truncated %}
-    <div class="prestage-warn">대기 {{ total }}건 중 최근 {{ max_rows }}건만 표시합니다.</div>
-    {% endif %}
-
     <table class="review-table prestage-table">
       <thead>
         <tr>
@@ -52,11 +48,26 @@
           <td><span class="cell-title">{{ r.title|default:"(제목 없음)" }}</span></td>
           <td>{{ r.pharmacy_name }}</td>
           <td>{{ r.platform }}</td>
-          <td>{{ r.city }}</td>
+          <td>{{ r.city_display }}</td>
           <td>{{ r.scraped_at|date:"m-d H:i" }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="pagination-bar">
+      <span>{{ page_obj.paginator.count }}건 중 {{ page_obj.start_index }}-{{ page_obj.end_index }}</span>
+      {% if page_obj.has_previous %}
+      <button type="button" class="page-btn" data-page="{{ page_obj.previous_page_number }}">이전</button>
+      {% endif %}
+      <span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+      <button type="button" class="page-btn" data-page="{{ page_obj.next_page_number }}">다음</button>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="pagination-bar"><span>총 {{ page_obj.paginator.count }}건</span></div>
+    {% endif %}
   {% endif %}
 </div>
