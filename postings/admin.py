@@ -399,6 +399,7 @@ class JobPostingAdmin(admin.ModelAdmin):
 
     PENDING_SORT_FIELDS = [
         ('scraped_at', '수집 시각'),
+        ('created_at', '공고일'),
         ('title', '제목'),
         ('pharmacy_name', '약국'),
         ('platform', '플랫폼'),

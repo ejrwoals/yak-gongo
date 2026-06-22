@@ -108,6 +108,15 @@ def scrape(
                                 f' > ul > li:nth-child({n}) > div.tit_wrap > div.tit > a'
                             )
                             child = driver.find_element(By.CSS_SELECTOR, child_css)
+
+                            # 빠른 중복 스킵: 목록의 링크(href)를 클릭 전에 검사해, 이미 수집한
+                            # 공고면 상세페이지를 열지 않고 바로 넘어간다 (재개 시 속도 핵심).
+                            href = child.get_attribute('href')
+                            if href and href in existing_urls:
+                                _log(f'  {city} - {n}번 글 중복 스킵 | {href}')
+                                found_on_page += 1
+                                continue
+
                             child.click()
                             driver.implicitly_wait(3)
 

@@ -219,7 +219,11 @@ def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
         raw.processed_at = timezone.now()
         raw.save(update_fields=['status', 'processed_at'])
         log('  → 급여 미명시, 저장 건너뜀')
-        return {**base, 'status': 'skipped', 'note': '급여 미명시'}
+        return {**base, 'status': 'skipped', 'note': '급여 미명시',
+                'steps': [{'task': 'Task1 급여', 'detail': '급여 미명시 → 저장 건너뜀', 'error': False}]}
+
+    # UI 현황판용 단계 요약은 DB 필드가 아니므로 JobPosting 생성 전에 분리한다.
+    steps = pipeline_result.pop('steps', [])
 
     # 지역 정규화 (JobPosting 생성 시점에 수행)
     city_raw = raw.city
@@ -242,8 +246,26 @@ def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
     raw.processed_at = timezone.now()
     raw.save(update_fields=['status', 'processed_at'])
 
+    fields = _summary_fields(posting)
     if pipeline_result.get('gpt_error_log'):
         log('  → 저장 완료 (has_error=True)')
-        return {**base, 'status': 'error', 'note': pipeline_result.get('gpt_error_log', '')[:200]}
+        return {**base, 'status': 'error', 'note': pipeline_result.get('gpt_error_log', '')[:200],
+                'steps': steps, 'fields': fields}
     log('  → 저장 완료 ✓')
-    return {**base, 'status': 'ok', 'note': ''}
+    return {**base, 'status': 'ok', 'note': '', 'steps': steps, 'fields': fields}
+
+
+def _summary_fields(posting) -> list[dict]:
+    """현황판 행에 한 줄로 보여줄 핵심 추출 필드 (label/value 목록)."""
+    fields = []
+    wage = posting.one_time_hourly_wage if posting.is_one_time_work else posting.net_hourly_wage
+    if wage:
+        fields.append({'label': '시급', 'value': f'{wage:.2f}만'})
+    if posting.net_salary:
+        fields.append({'label': '월급', 'value': f'{posting.net_salary:.0f}만'})
+    if posting.city:
+        fields.append({'label': '지역', 'value': posting.city})
+    fields.append({'label': '근무', 'value': '일회성' if posting.is_one_time_work else '지속성'})
+    if not posting.is_one_time_work and posting.hours_per_week:
+        fields.append({'label': '주당', 'value': f'{posting.hours_per_week:.0f}h'})
+    return fields

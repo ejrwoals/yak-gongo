@@ -158,6 +158,11 @@
     border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold;
   }
   .ps-sort-toggle:hover { background: #eee; }
+  .ps-link-btn {
+    display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;
+    font-size: 11.5px; color: #495057; text-decoration: none; white-space: nowrap;
+  }
+  .ps-link-btn:hover { background: #f1f3f5; border-color: #999; }
 
   /* 프리셋 설명 */
   #preset-description {
@@ -252,7 +257,24 @@
   .verify-log-row.status-running .vbadge { background: #6f42c1; }
   .verify-log-row .vid { color: #888; font-variant-numeric: tabular-nums; }
   .verify-log-row .vmain { min-width: 0; }
+  .verify-log-row:has(.vsteps) { cursor: pointer; }
   .verify-log-row .vtitle { color: #333; }
+  .vcaret { color: #999; font-size: 10px; margin-right: 4px; }
+  /* 핵심 추출 필드 (인라인) */
+  .vfields { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .vfield {
+    background: #f1f3f5; border-radius: 4px; padding: 1px 7px; font-size: 11.5px; color: #495057;
+  }
+  .vfield b { color: #868e96; font-weight: 600; margin-right: 3px; }
+  /* 5-task 단계 요약 (펼침) */
+  .vsteps { margin-top: 6px; border-left: 2px solid #e3dcf3; padding-left: 9px; }
+  .vstep {
+    display: grid; grid-template-columns: 130px 1fr; gap: 8px;
+    padding: 2px 0; font-size: 11.5px; color: #555;
+  }
+  .vstep-task { color: #6f42c1; font-weight: 600; }
+  .vstep.vstep-err .vstep-task { color: #d9480f; }
+  .vstep.vstep-err .vstep-detail { color: #d9480f; }
   .verify-log-row .vnote { color: #d9480f; font-size: 12px; margin-top: 2px; word-break: break-word; }
   .verify-log-row.status-ok .vnote { color: #2b8a3e; }
   .verify-log-row.status-running .vnote { color: #6f42c1; display: flex; align-items: center; gap: 6px; }
@@ -566,6 +588,17 @@
     if (verifyRun.running) return;
     document.getElementById('verify-modal').style.display = 'none';
   });
+  // 행 클릭 시 5-task 단계 요약 펼치기/접기
+  document.getElementById('verify-log').addEventListener('click', function(e) {
+    const row = e.target.closest('.verify-log-row');
+    if (!row) return;
+    const steps = row.querySelector('.vsteps');
+    if (!steps) return;
+    const open = steps.style.display === 'none';
+    steps.style.display = open ? '' : 'none';
+    const caret = row.querySelector('.vcaret');
+    if (caret) caret.textContent = open ? '▾' : '▸';
+  });
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => (
@@ -576,9 +609,29 @@
   function verifyRowHtml(item) {
     const spinner = item.status === 'running' ? '<span class="vspinner"></span>' : '';
     const note = item.note ? `<div class="vnote">${spinner}${escapeHtml(item.note)}</div>` : '';
+
+    // 핵심 추출 필드 (항상 인라인 표시)
+    let fields = '';
+    if (item.fields && item.fields.length) {
+      fields = '<div class="vfields">' + item.fields.map(f =>
+        `<span class="vfield"><b>${escapeHtml(f.label)}</b> ${escapeHtml(f.value)}</span>`
+      ).join('') + '</div>';
+    }
+
+    // 5-task 단계 요약 (캐럿 클릭 시 펼침)
+    let steps = '', caret = '';
+    if (item.steps && item.steps.length) {
+      caret = '<span class="vcaret">▸</span>';
+      steps = '<div class="vsteps" style="display:none;">' + item.steps.map(s =>
+        `<div class="vstep${s.error ? ' vstep-err' : ''}">` +
+        `<span class="vstep-task">${escapeHtml(s.task)}</span>` +
+        `<span class="vstep-detail">${escapeHtml(s.detail)}</span></div>`
+      ).join('') + '</div>';
+    }
+
     return `<span class="vbadge">${STATUS_LABEL[item.status] || item.status}</span>` +
            `<span class="vid">#${item.id}</span>` +
-           `<div class="vmain"><span class="vtitle">${escapeHtml(item.title || '')}</span>${note}</div>`;
+           `<div class="vmain"><span class="vtitle">${caret}${escapeHtml(item.title || '')}</span>${fields}${note}${steps}</div>`;
   }
 
   function verifyAppendRow(item) {

@@ -38,7 +38,9 @@
           <th>약국</th>
           <th>플랫폼</th>
           <th>지역</th>
+          <th>공고일</th>
           <th>수집 시각</th>
+          <th>상세</th>
         </tr>
       </thead>
       <tbody>
@@ -49,7 +51,9 @@
           <td>{{ r.pharmacy_name }}</td>
           <td>{{ r.platform }}</td>
           <td>{{ r.city_display }}</td>
+          <td>{{ r.created_at|date:"Y-m-d"|default:"-" }}</td>
           <td>{{ r.scraped_at|date:"m-d H:i" }}</td>
+          <td><a href="{% url 'admin:postings_rawposting_change' r.id %}" target="_blank" rel="noopener" class="ps-link-btn">상세 ↗</a></td>
         </tr>
         {% endfor %}
       </tbody>

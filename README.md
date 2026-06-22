@@ -319,12 +319,12 @@ http://localhost:8000/admin/ 접속 후 사용.
    - 약문약답 선택 시 `headless`는 자동 비활성화됨 (카카오 로그인 필요)
    - 팜리크루트 선택 시 지역 대분류 복수 선택 + 수집 개수 한도 설정 가능
 2. **크롤링 시작** → 백그라운드 thread에서 `run_pipeline --dry-run`(크롤링만) 실행 → `RawPosting`까지만 저장. 페이지 이동 없이 **대시보드 하단(`#table-container`)에 실시간 로그 패널**이 인라인으로 표시된다(`status/<id>/`를 1초 간격으로 폴링). 별도 로그 페이지로 이동하지 않는다.
-3. 약문약답의 경우, 로그 패널 안에 카카오 로그인 안내와 **로그인 완료** 버튼이 인라인으로 나타나며, 브라우저에서 로그인을 마친 뒤 이 버튼을 누르면 스크래핑이 시작된다. 완료되면 패널에서 바로 **pre-2단계로** 넘어가는 버튼이 뜬다.
+3. 약문약답의 경우, 로그 패널 안에 카카오 로그인 안내와 **로그인 완료** 버튼이 인라인으로 나타나며, 브라우저에서 로그인을 마친 뒤 이 버튼을 누르면 스크래핑이 시작된다. 완료되면 패널에 **← 크롤링 설정으로 돌아가기** 버튼이 떠 크롤링 폼으로 되돌아갈 수 있다(이어서 pre-2단계 처리 대기 탭에서 LLM 처리).
 
 **pre-2단계: LLM 프로세싱** (`처리 대기 [N]` 버튼)
 
-1. 버튼의 배지에 처리 대기(`status=pending`) `RawPosting` 건수가 표시된다. 누르면 대시보드 하단에 설명 박스와 함께 대기 목록 표가 펼쳐진다(최대 500행). 표는 프리셋 컨트롤바와 동일한 레이아웃(정렬 좌 / 액션 우)으로, 수집 시각·제목·약국·플랫폼·지역 기준 정렬(오름/내림)을 지원한다.
-2. 전체 또는 체크한 행만 선택해 처리하면, LLM 자동 검토와 동일한 **실시간 진행 모달**이 뜨고 한 건씩 LLM 처리한다(건당 `prestage/process-one/` 호출 → `pipeline.stages.process_raw_posting`). 각 건은 저장/급여 미명시 건너뜀/에러로 집계되며, 완료 후 대기 목록과 배지가 자동 갱신된다.
+1. 버튼의 배지에 처리 대기(`status=pending`) `RawPosting` 건수가 표시된다. 누르면 대시보드 하단에 설명 박스와 함께 대기 목록 표가 펼쳐진다(페이지당 25행 페이지네이션). 표는 프리셋 컨트롤바와 동일한 레이아웃(정렬 좌 / 액션 우)으로, 수집 시각·공고일(`created_at`)·제목·약국·플랫폼·지역 기준 정렬(오름/내림)을 지원한다. 지역 컬럼은 원본 `city`(약문약답은 전체 주소, 팜리크루트는 짧은 지역)를 `geo.mapping.normalize_city`로 정규화한 값(`city_display`)을 보여주며, 각 행의 **상세 ↗** 링크는 해당 `RawPosting` admin 변경 페이지로 연결된다.
+2. 전체 또는 체크한 행만 선택해 처리하면, LLM 자동 검토와 동일한 **실시간 진행 모달**이 뜨고 한 건씩 LLM 처리한다(건당 `prestage/process-one/` 호출 → `pipeline.stages.process_raw_posting`). 각 건은 저장/급여 미명시 건너뜀/에러로 집계된다. 모달 행에는 추출된 핵심 필드(시급·월급·지역·근무형태·주당 시간, `pipeline.stages._summary_fields`)가 인라인으로 표시되고, 행을 클릭하면 5-task 처리 단계 요약(`process_posting`이 모은 `steps`)이 펼쳐진다. 완료 후 대기 목록과 배지가 자동 갱신된다.
 
 pre-단계 상세 패널(크롤링 폼·로그·대기 목록)은 프리셋 상세와 동일한 하단 영역(`#table-container`)에 렌더되며, 프리셋 탭과 상호 토글된다. 동시에 하나의 크롤링만 실행 가능하며, 이미 실행 중이면 실행 중인 작업 로그를 (페이지 이동 없이) 같은 패널에서 볼지 묻는다. 크롤링과 LLM 프로세싱이 분리돼 있어, 크롤링 도중 멈춰도 RawPosting은 남고 나중에 pre-2단계로 이어서 처리할 수 있다.
 
@@ -602,8 +602,8 @@ python manage.py run_statistics --output-dir /path/to/output
 |---|---|
 | `prompts.py` | `QUERY_TASK_1~5`, `FEW_SHOT_1~5` 상수 — 프롬프트 문자열만 관리 |
 | `tasks.py` | `run_task_1()~run_task_5()` — Gemini API 호출 후 JSON 파싱, `extract_json()` 포함 (`raw_decode`로 첫 번째 유효 JSON만 추출) |
-| `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. 급여 미명시 공고는 `None`을 반환하여 저장을 건너뜀. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음 |
-| `stages.py` | 2단계 파이프라인 공통 로직. `scrape_stage()` — 크롤링하여 `RawPosting(pending)` 저장. `process_stage()` — pending RawPosting을 일괄 LLM 처리. `process_raw_posting(raw, client, ...)` — 단일 RawPosting 처리 단위 함수(일괄 처리와 대시보드 건별 처리가 공유). 모두 멱등하다 |
+| `runner.py` | `process_posting(body, client, model_name, log=None)` — 5개 task 오케스트레이션, `JobPosting` 필드 dict 반환. 급여 미명시 공고는 `None`을 반환하여 저장을 건너뜀. `log` 콜백을 전달하면 각 단계별 상세 로그를 받을 수 있음. 반환 dict에는 UI 현황판용 `steps`(task별 `{task, detail, error}` 요약 목록, DB 필드가 아니라 호출부에서 `pop`해 사용)도 포함된다 |
+| `stages.py` | 2단계 파이프라인 공통 로직. `scrape_stage()` — 크롤링하여 `RawPosting(pending)` 저장. `process_stage()` — pending RawPosting을 일괄 LLM 처리. `process_raw_posting(raw, client, ...)` — 단일 RawPosting 처리 단위 함수(일괄 처리와 대시보드 건별 처리가 공유). 대시보드 모달용으로 `process_posting`의 `steps`와 핵심 추출 필드 요약(`_summary_fields`: 시급·월급·지역·근무형태·주당 시간)을 반환 dict에 실어 보낸다. 모두 멱등하다 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간 재계산 |
 | `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환. `calculate_net_salary(gross_monthly)` — 세전 월급 → 세후 월급 환산(공식 본체, 대화형 agent의 세전 환산도 이 함수를 공유). `ceil_hourly_wage(value)` — 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정 |
 

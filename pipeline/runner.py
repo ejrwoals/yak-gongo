@@ -36,6 +36,12 @@ def process_posting(
         if log:
             log(msg)
 
+    # 진행 현황판(UI)용 요약 단계 목록. DB 필드가 아니므로 호출부에서 pop해 사용한다.
+    steps: list[dict] = []
+
+    def _step(task: str, detail: str, error: bool = False):
+        steps.append({'task': task, 'detail': detail, 'error': error})
+
     result = {
         'llm_model': model_name,
         'gpt_summary': '',
@@ -70,6 +76,8 @@ def process_posting(
     if not t1:
         result['gpt_error_log'] = '[Task1 FAIL] LLM 응답 없음 또는 JSON 파싱 실패'
         _log('  [Task1 FAIL] LLM 응답 없음 또는 JSON 파싱 실패')
+        _step('Task1 급여', 'LLM 응답 없음 또는 JSON 파싱 실패', error=True)
+        result['steps'] = steps
         return result
 
     is_salary = t1.get('공고에 급여 명시 여부', False)
@@ -85,6 +93,9 @@ def process_posting(
 
     if is_salary:
         _log(f'  [Task1] 급여 명시 ✓ | 유형: {wage_type or "미확인"} | 금액: {wage}만원 | 세후: {is_after_tax} | 일회성: {is_one_time}')
+        _step('Task1 급여', f'명시 · {wage_type or "유형미상"} · {wage}만원 · '
+                            f'{"세후" if is_after_tax else "세전"} · '
+                            f'{"일회성" if is_one_time else "지속성"}')
     else:
         _log(f'  [Task1] 급여 미명시 → 저장 건너뜀')
         return None
@@ -97,6 +108,7 @@ def process_posting(
             result['one_time_hourly_wage'] = t2.get('일회성 근무 시급')
             result['gpt_output_log'] += f'[T2] {t2}\n'
             _log(f'  [Task2] 일회성 시급: {result["one_time_hourly_wage"]}만원')
+            _step('Task2 일회성 시급', f'{result["one_time_hourly_wage"]}만원')
 
             check_dict = {
                 '급여': wage,
@@ -108,6 +120,7 @@ def process_posting(
         else:
             error_history += '[Task2 FAIL] LLM 응답 없음\n'
             _log('  [Task2 FAIL] LLM 응답 없음')
+            _step('Task2 일회성 시급', 'LLM 응답 없음', error=True)
 
     else:
         # Task 3: 지속성 근무 출퇴근 시각
@@ -116,6 +129,7 @@ def process_posting(
         if not t3:
             error_history += '[Task3 FAIL] LLM 응답 없음\n'
             _log('  [Task3 FAIL] LLM 응답 없음')
+            _step('Task3 근무 일정', 'LLM 응답 없음', error=True)
             t3 = {}
 
         result['gpt_output_log'] += f'[T3] {t3}\n'
@@ -142,6 +156,7 @@ def process_posting(
         weekday_str = f'평일 {wd}일 {wstart}~{wend}시' if wstart and wend else f'평일 {wd}일'
         weekend_str = f'주말 {ws}일 {we_start}~{we_end}시' if we_start and we_end else f'주말 {ws}일'
         _log(f'  [Task3/4] {weekday_str} / {weekend_str}')
+        _step('Task3·4 근무 일정', f'{weekday_str} / {weekend_str}')
 
         check_dict = {
             '급여': wage,
@@ -168,6 +183,7 @@ def process_posting(
         if hourly_wage:
             tax_label = '세후' if is_after_tax else '세전'
             _log(f'  [검증] 주당 {hours_per_week:.1f}h / 시급({tax_label}) {hourly_wage:.2f}만원')
+            _step('검증 근무시간·시급', f'주당 {hours_per_week:.1f}h · 시급({tax_label}) {hourly_wage:.2f}만원')
 
         # 세후 월급 계산
         if is_salary and isinstance(wage, (int, float)) and result['hours_per_month']:
@@ -184,6 +200,7 @@ def process_posting(
                     result['net_salary'] = to_net_salary(monthly_gross, bool(is_after_tax))
                     result['net_hourly_wage'] = result['net_salary'] / result['hours_per_month']
                     _log(f'  [급여] 세후 월급: {result["net_salary"]:.1f}만원 / 세후 시급: {result["net_hourly_wage"]:.2f}만원')
+                    _step('급여 세후 환산', f'월급 {result["net_salary"]:.1f}만원 · 시급 {result["net_hourly_wage"]:.2f}만원')
             except Exception:
                 pass
 
@@ -196,6 +213,11 @@ def process_posting(
         result['meal_info'] = str(t5.get('식사 관련') or '')
         result['gpt_output_log'] += f'[T5] {t5}\n'
         _log(f'  [Task5] 월차: {result["monthly_leave"]} | 경력: {result["experience_required"] or "무관"} | 식사: {result["meal_info"] or "없음"}')
+        _step('Task5 복리후생', f'월차 {result["monthly_leave"] or "-"} · '
+                              f'경력 {result["experience_required"] or "무관"} · '
+                              f'식사 {result["meal_info"] or "없음"}')
+    else:
+        _step('Task5 복리후생', 'LLM 응답 없음', error=True)
 
     # 시급 올림 보정 (계산식이 시급을 구조적으로 과소평가하는 점 보정)
     result['net_hourly_wage'] = ceil_hourly_wage(result['net_hourly_wage'])
@@ -212,5 +234,7 @@ def process_posting(
     if error_history:
         result['gpt_error_log'] = error_history
         _log(f'  [ERROR] {error_history.strip()}')
+        _step('검증 경고', error_history.strip().replace('\n', ' · '), error=True)
 
+    result['steps'] = steps
     return result

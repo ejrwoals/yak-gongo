@@ -111,22 +111,27 @@ def scrape(
                 created_at = f'{year}-{month}-{day}'
 
                 # 급여·근무시간: 표의 라벨 셀 텍스트로 같은 행의 값 셀(td[2])을 찾는다.
+                # 급여 셀에는 "세후 급여 계산하기" 버튼이 함께 들어 있어 .text에 섞이므로 제거한다.
                 salary = driver.find_element(
                     By.XPATH, '//main//tr[td/span[normalize-space(text())="급여"]]/td[2]').text
+                salary = salary.replace('세후 급여 계산하기', '').strip()
                 work_hours = driver.find_element(
                     By.XPATH, '//main//tr[td/span[normalize-space(text())="근무시간"]]/td[2]').text
 
                 body_text = driver.find_element(
-                    By.CSS_SELECTOR, 'main .detail__message').text
+                    By.CSS_SELECTOR, 'main .detail__message').text.strip()
 
-                body = (
-                    f'공고 제목 : {title}\n'
-                    f'약국 이름 : {name}\n'
-                    f'약국 주소 : {address}\n'
-                    f'근무 시간 : {work_hours}\n'
-                    f'급여 : {salary}\n'
-                    f'글 본문 : {body_text}'
-                )
+                lines = [
+                    f'공고 제목 : {title}',
+                    f'약국 이름 : {name}',
+                    f'약국 주소 : {address}',
+                    f'근무 시간 : {work_hours}',
+                    f'급여 : {salary}',
+                ]
+                # 작성자 자유 메시지(.detail__message)는 비어 있을 때가 많아, 있을 때만 넣는다.
+                if body_text:
+                    lines.append(f'글 본문 : {body_text}')
+                body = '\n'.join(lines)
 
                 record = {
                     'url': cur_url,
