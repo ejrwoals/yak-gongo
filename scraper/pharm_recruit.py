@@ -9,6 +9,7 @@
 """
 import json
 import math
+from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -37,7 +38,7 @@ def _build_page_url(base_url: str, page: int) -> str:
 
 def scrape(
     big_category: str,
-    year: int = 2026,
+    year: int | None = None,
     headless: bool = False,
     existing_urls: set[str] | None = None,
     category_limit: int | None = None,
@@ -53,7 +54,7 @@ def scrape(
         existing_urls:   이미 DB에 존재하는 URL 집합 (중복 스킵용)
         category_limit:  이 카테고리에서 수집할 최대 공고 수 (None = 전체)
                          내부적으로 도시 수로 나눠 균등 분배.
-        year:            등록일 연도 (팜리크루트는 월/일만 표시되므로 별도 지정 필요)
+        year:            등록일 연도 (팜리크루트는 월/일만 표시됨. None이면 현재 연도)
         on_item:         공고 1건을 수집할 때마다 호출되는 콜백(dict). 중간 저장용.
 
     Returns:
@@ -65,6 +66,8 @@ def scrape(
 
     if existing_urls is None:
         existing_urls = set()
+    if year is None:
+        year = date.today().year
 
     _log = log or (lambda msg: print(msg))
 

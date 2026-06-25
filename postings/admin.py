@@ -359,7 +359,7 @@ class JobPostingAdmin(admin.ModelAdmin):
         already_running = PipelineRun.objects.filter(status='running').first()
         form = PipelineRunForm(initial={
             'source': 'yakdap',
-            'start_id': 38800, 'count': 100, 'step': 2, 'year': 2026,
+            'start_id': 38800, 'count': 100, 'step': 2,
             'big_categories': ['서울'], 'headless': True,
         })
         ctx = {'form': form, 'already_running': already_running}

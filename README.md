@@ -222,11 +222,10 @@ python manage.py run_pipeline \
     --source yakdap \
     --start-id 38800 \
     --count 100 \
-    --step 2 \
-    --year 2024
+    --step 2
 
 # 단계를 따로 돌리기
-python manage.py scrape_postings --source yakdap --start-id 38800 --count 100 --step 2 --year 2024
+python manage.py scrape_postings --source yakdap --start-id 38800 --count 100 --step 2
 python manage.py process_postings   # 1단계 완료 후 별도로
 ```
 
@@ -235,7 +234,7 @@ python manage.py process_postings   # 1단계 완료 후 별도로
 | `--start-id` | 탐색 시작 공고 ID | `38800` |
 | `--count` | 탐색할 공고 수 | `100` |
 | `--step` | ID 증가 간격 | `2` |
-| `--year` | 등록일 연도 (약문약답은 월/일만 표시됨) | `2024` |
+| `--year` | 등록일 연도 폴백값. 약문약답은 공고에 적힌 연도("2024년 11월 22일")를 우선 쓰고, 연도가 없거나(월·일만 표시) 상대 표기("어제 오전 8:17")인 경우 이 값으로 보정한다 | 현재 연도 |
 
 명령어 실행 시 브라우저가 열리고 카카오 로그인 화면이 나타난다. 로그인을 완료한 뒤 터미널에서 Enter를 누르면 수집이 시작된다. Admin UI에서 실행하는 경우에는 로그 페이지에서 **로그인 완료** 버튼을 클릭한다.
 
@@ -245,15 +244,14 @@ python manage.py process_postings   # 1단계 완료 후 별도로
 python manage.py run_pipeline \
     --source pharm_recruit \
     --big-category 서울 인천 \
-    --pharm-count 50 \
-    --year 2026
+    --pharm-count 50
 ```
 
 | 옵션 | 설명 | 기본값 |
 |---|---|---|
 | `--big-category` | 수집할 지역 대분류 (복수 지정 가능) | `서울` |
 | `--pharm-count` | 수집 개수 한도. 선택 지역/도시별로 균등 분배 | 전체 |
-| `--year` | 등록일 연도 (팜리크루트는 월/일만 표시됨) | `2024` |
+| `--year` | 등록일 연도 (팜리크루트는 월/일만 표시되므로 이 값으로 보정) | 현재 연도 |
 
 `--big-category`에 가능한 값: `서울`, `인천`, `경기 중부`, `경기 외곽`, `지방`
 
@@ -626,8 +624,8 @@ result = process_posting(body="...", client=client, model_name=settings.LLM_MODE
 
 | 파일 | 역할 |
 |---|---|
-| `yakdap.py` | `scrape(start_id, count, step, year, ..., on_item=None)` → `list[dict]`. 약문약답이 styled-components 해시 클래스(`sc-*`)를 쓰므로 재배포 시 깨지지 않도록, 시맨틱 클래스(`title-container`, `detail__pharmacy-name`, `detail__pharmacy-address`, `detail__message`)와 표는 라벨 텍스트 기반 XPath(급여·근무시간)로 선택한다 (`main` 기준 앵커) |
-| `pharm_recruit.py` | `scrape(big_category, year, ..., on_item=None)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원. 중복 URL 스킵 시에도 로그를 남겨 재크롤링 진행 상황이 끊겨 보이지 않는다 |
+| `yakdap.py` | `scrape(start_id, count, step, year=None, ..., on_item=None)` → `list[dict]`. 약문약답이 styled-components 해시 클래스(`sc-*`)를 쓰므로 재배포 시 깨지지 않도록, 시맨틱 클래스(`title-container`, `detail__pharmacy-name`, `detail__pharmacy-address`, `detail__message`)와 표는 라벨 텍스트 기반 XPath(급여·근무시간)로 선택한다 (`main` 기준 앵커). 등록일은 `_parse_created_at()`이 절대형(`2024년 11월 22일`)·상대형(`어제 오전 8:17`, `N시간 전`, `N분 전`, 시각만 `오전 8:36`=오늘)을 모두 `YYYY-MM-DD`로 변환한다. 절대형에 연도가 없으면 `year`(폴백, `None`이면 현재 연도)를 쓴다 |
+| `pharm_recruit.py` | `scrape(big_category, year=None, ..., on_item=None)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원. 팜리크루트는 월/일만 표시되므로 등록일 연도는 `year`(`None`이면 현재 연도)로 보정한다. 중복 URL 스킵 시에도 로그를 남겨 재크롤링 진행 상황이 끊겨 보이지 않는다 |
 | `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑). `.gitignore` 대상이므로 [초기 설정](#초기-설정) 참고하여 생성 필요 |
 
 반환 dict의 키: `url`, `platform`, `created_at`, `title`, `pharmacy_name`, `body`, `city`, `big_category`

@@ -46,10 +46,6 @@ class PipelineRunForm(forms.Form):
     )
 
     # ── 공통 ─────────────────────────────────────────────────────
-    year = forms.IntegerField(
-        required=False, initial=2026, label='연도',
-        help_text='등록일 연도 (팜리크루트·약문약답은 월/일만 표시됨)',
-    )
     headless = forms.BooleanField(
         required=False, initial=True, label='헤드리스 모드',
         help_text='브라우저 창 없이 실행 (서버 환경 권장)',
@@ -72,9 +68,7 @@ class PipelineRunForm(forms.Form):
             kwargs['start_id'] = data.get('start_id') or 38800
             kwargs['count'] = data.get('count') or 100
             kwargs['step'] = data.get('step') or 2
-            kwargs['year'] = data.get('year') or 2026
         else:
             kwargs['big_categories'] = data.get('big_categories') or ['서울']
             kwargs['pharm_count'] = data.get('pharm_count') or None
-            kwargs['year'] = data.get('year') or 2026
         return kwargs

@@ -10,6 +10,7 @@
 import time
 import re
 import threading
+from datetime import date, timedelta
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -19,6 +20,31 @@ from selenium.webdriver.support.ui import WebDriverWait
 PLATFORM = '약문약답'
 BASE_URL = 'https://app.stg.ymyd.onjourney.co.kr/jobpost/view?id='
 LOGIN_URL = 'https://app.stg.ymyd.onjourney.co.kr/main/boards'
+
+
+def _parse_created_at(date_text: str, fallback_year: int, today: date | None = None) -> str:
+    """약문약답 등록일 텍스트를 'YYYY-MM-DD' 문자열로 변환한다.
+
+    약문약답이 실제로 쓰는 등록일 형태:
+      - 절대형: '2024년 11월 22일 오후 12:54' (오래된 공고. 연도 없이 '11월 22일'인 경우도 있음)
+      - 어제:   '어제 오전 8:17'
+      - 오늘:   날짜 키워드 없이 시각만('오전 8:36'), 또는 'N시간 전'·'N분 전'
+    절대형은 그대로 파싱하고(연도 없으면 fallback_year 사용), 어제는 today-1, 그 외는 today로 본다.
+    """
+    text = date_text.strip()
+    today = today or date.today()
+
+    # 절대형: '...년 ...월 ...일' (연도는 선택)
+    m = re.search(r'(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일', text)
+    if m:
+        y = int(m.group(1)) if m.group(1) else fallback_year
+        return f'{y:04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}'
+
+    if text.startswith('어제'):
+        return (today - timedelta(days=1)).isoformat()
+
+    # 시각만('오전 8:36')·'N시간 전'·'N분 전' → 오늘
+    return today.isoformat()
 
 
 def _build_driver(headless: bool = False) -> webdriver.Chrome:
@@ -34,7 +60,7 @@ def scrape(
     start_id: int,
     count: int = 100,
     step: int = 2,
-    year: int = 2024,
+    year: int | None = None,
     headless: bool = False,
     existing_urls: set[str] | None = None,
     login_event: threading.Event | None = None,
@@ -48,7 +74,7 @@ def scrape(
         start_id:      탐색 시작 공고 ID
         count:         탐색할 공고 개수
         step:          ID 증가 간격 (K)
-        year:          등록일 연도 (약문약답은 월/일만 표시됨)
+        year:          연도 폴백값 (약문약답은 공고에 적힌 연도를 우선 사용. None이면 현재 연도)
         headless:      헤드리스 모드 여부
         existing_urls: 이미 DB에 존재하는 URL 집합 (중복 스킵용)
         on_item:       공고 1건을 수집할 때마다 호출되는 콜백(dict). 중간 저장용.
@@ -59,6 +85,8 @@ def scrape(
     """
     if existing_urls is None:
         existing_urls = set()
+    if year is None:
+        year = date.today().year
 
     _log = log or (lambda msg: print(msg))
 
@@ -106,9 +134,8 @@ def scrape(
 
                 date_text = driver.find_element(
                     By.CSS_SELECTOR, 'main section.title-container .detail-title__bottom > span').text
-                month = date_text.split('월')[0].split()[-1].zfill(2)
-                day = date_text.split('일')[0].split()[-1].zfill(2)
-                created_at = f'{year}-{month}-{day}'
+                # 절대형('2024년 11월 22일')·상대형('어제 오전 8:17') 모두 처리. year는 연도 없는 절대형의 폴백.
+                created_at = _parse_created_at(date_text, year)
 
                 # 급여·근무시간: 표의 라벨 셀 텍스트로 같은 행의 값 셀(td[2])을 찾는다.
                 # 급여 셀에는 "세후 급여 계산하기" 버튼이 함께 들어 있어 .text에 섞이므로 제거한다.

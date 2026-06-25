@@ -26,7 +26,8 @@ class Command(BaseCommand):
         parser.add_argument('--start-id', type=int, default=38800)
         parser.add_argument('--count', type=int, default=100)
         parser.add_argument('--step', type=int, default=2)
-        parser.add_argument('--year', type=int, default=2024)
+        parser.add_argument('--year', type=int, default=None,
+                            help='등록일 연도 폴백 (기본: 현재 연도). 약문약답은 공고에 적힌 연도를 우선 사용.')
         # pharm_recruit 전용
         parser.add_argument('--big-category', type=str, nargs='+', default=['서울'])
         parser.add_argument('--pharm-count', type=int, default=None,
