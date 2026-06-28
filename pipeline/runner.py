@@ -21,12 +21,16 @@ def process_posting(
     client: genai.Client,
     model_name: str = '',
     log: Callable[[str], None] | None = None,
+    usage: dict | None = None,
 ) -> dict:
     """
     공고 본문을 LLM 5-task 파이프라인으로 처리하여 구조화된 결과를 반환.
 
     Args:
         log: 각 처리 단계의 상세 로그를 받을 콜백 함수. 없으면 출력 없음.
+        usage: 토큰 사용량 accumulator. 호출부 소유의 가변 dict 를 넘기면 Task1~5 의
+            토큰이 여기에 합산된다. 급여 미명시로 조기 return 하거나 예외가 나도
+            호출부가 그때까지 쓴 토큰을 읽을 수 있다(비용 누락 방지).
 
     Returns:
         dict with keys matching JobPosting model fields.
@@ -72,7 +76,7 @@ def process_posting(
 
     # ── Task 1: 급여 & 일회성 근무 여부 ─────────────────────────
     _log('  [Task1] 급여 정보 추출 중...')
-    t1 = run_task_1(body, client, model_name)
+    t1 = run_task_1(body, client, model_name, usage)
     if not t1:
         result['gpt_error_log'] = '[Task1 FAIL] LLM 응답 없음 또는 JSON 파싱 실패'
         _log('  [Task1 FAIL] LLM 응답 없음 또는 JSON 파싱 실패')
@@ -103,7 +107,7 @@ def process_posting(
     # ── Task 2 또는 Task 3+4 분기 ────────────────────────────────
     if is_one_time:
         _log('  [Task2] 일회성 근무 — 시급 추출 중...')
-        t2 = run_task_2(body, client, model_name)
+        t2 = run_task_2(body, client, model_name, usage)
         if t2:
             result['one_time_hourly_wage'] = t2.get('일회성 근무 시급')
             result['gpt_output_log'] += f'[T2] {t2}\n'
@@ -125,7 +129,7 @@ def process_posting(
     else:
         # Task 3: 지속성 근무 출퇴근 시각
         _log('  [Task3] 지속성 근무 — 근무 일정 추출 중...')
-        t3 = run_task_3(body, client, model_name)
+        t3 = run_task_3(body, client, model_name, usage)
         if not t3:
             error_history += '[Task3 FAIL] LLM 응답 없음\n'
             _log('  [Task3 FAIL] LLM 응답 없음')
@@ -136,7 +140,7 @@ def process_posting(
 
         # Task 4: Task3 결과 검토
         _log('  [Task4] 근무 일정 검토 중...')
-        t4 = run_task_4(body, t3, client, model_name)
+        t4 = run_task_4(body, t3, client, model_name, usage)
         final = t4 if t4 else t3
         result['gpt_output_log'] += f'[T4] {final}\n'
 
@@ -206,7 +210,7 @@ def process_posting(
 
     # ── Task 5: 복리후생 ─────────────────────────────────────────
     _log('  [Task5] 복리후생 추출 중...')
-    t5 = run_task_5(body, client, model_name)
+    t5 = run_task_5(body, client, model_name, usage)
     if t5:
         result['monthly_leave'] = str(t5.get('월차') or '')
         result['experience_required'] = str(t5.get('경력 요구') or '')

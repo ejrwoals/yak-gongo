@@ -20,6 +20,7 @@ from google.genai import types
 
 from .review_presets import FIELD_META, _COMMON_EXPAND_EDITABLE
 from .review_verify import DOMAIN_RULES, _values_equal
+from pipeline.usage import add_response, new_accumulator
 
 # 모달 패널·스냅샷에 보여줄 전체 필드(값 확인용). 모델은 이 값들을 근거로 추론한다.
 AGENT_VISIBLE_FIELDS = list(_COMMON_EXPAND_EDITABLE)
@@ -256,15 +257,19 @@ def _is_empty_or_malformed(response):
     return 'MAX_TOKENS' not in fr and 'SAFETY' not in fr
 
 
-def _generate(client, model_name, posting, contents):
+def _generate(client, model_name, posting, contents, usage=None):
     """모델 호출. 빈 응답은 확률적 실패라 온도를 올려가며 최대 3회 재시도한다.
-    (구조화 출력이라 형식 오류는 발생하지 않는다.) 마지막 응답을 그대로 반환한다."""
+    (구조화 출력이라 형식 오류는 발생하지 않는다.) 마지막 응답을 그대로 반환한다.
+
+    usage 가 주어지면 재시도분을 포함한 모든 호출의 토큰을 합산한다(재시도도 과금되므로).
+    """
     temps = (0.2, 0.6, 1.0)
     response = None
     for i, temp in enumerate(temps):
         response = client.models.generate_content(
             model=model_name, contents=contents, config=_config(posting, temp),
         )
+        add_response(usage, response)
         if not _is_empty_or_malformed(response):
             return response
         print(f'[agent RETRY] attempt={i + 1}/{len(temps)} empty/malformed → 재시도')
@@ -493,9 +498,16 @@ def apply_update(posting, updates):
 # ── 턴 진행 ──
 
 def propose_turn(posting, messages, client, model_name):
-    """한 턴 진행. tool_request(제안) 또는 message 반환. DB 변경 없음."""
-    response = _generate(client, model_name, posting, build_contents(messages))
-    return _interpret(posting, response)
+    """한 턴 진행. tool_request(제안) 또는 message 반환. DB 변경 없음.
+
+    반환 dict 에 'usage'(이 턴의 토큰 accumulator)를 실어, 프런트가 메시지에 누적했다가
+    검토 완료 시 세션 총합으로 1 이벤트 기록하도록 한다.
+    """
+    acc = new_accumulator()
+    response = _generate(client, model_name, posting, build_contents(messages), usage=acc)
+    interp = _interpret(posting, response)
+    interp['usage'] = acc
+    return interp
 
 
 def _outcome_text(m):
@@ -527,12 +539,14 @@ def apply_turn(posting, messages, tool_call, decision, client, model_name, note=
     else:
         applied = []
 
+    acc = new_accumulator()
     contents = build_contents(messages)
     outcome = {'decision': decision, 'applied': applied, 'note': note}
     contents.append(types.Content(role='user', parts=[types.Part(text=_outcome_text(outcome))]))
-    response = _generate(client, model_name, posting, contents)
+    response = _generate(client, model_name, posting, contents, usage=acc)
     interp = _interpret(posting, response)
     interp['applied'] = applied
+    interp['usage'] = acc
     return interp
 
 
@@ -573,8 +587,26 @@ def collect_applied_changes(messages):
     return out
 
 
-def generate_comment(posting, messages, client, model_name):
-    """대화를 바탕으로 user_comment 1~3문장 요약 생성."""
+def sum_session_usage(messages):
+    """세션 동안 각 모델 턴에 실려 온 usage 를 하나의 accumulator 로 합산.
+
+    프런트가 chat/tool 응답의 data.usage 를 model 메시지에 저장해 finish 시 되돌려준다.
+    여기에 generate_comment 의 usage 를 더해 '세션당 1 이벤트'의 총 토큰을 만든다.
+    """
+    acc = new_accumulator()
+    for m in messages:
+        u = m.get('usage') if isinstance(m, dict) else None
+        if not isinstance(u, dict):
+            continue
+        acc['input_tokens'] += u.get('input_tokens', 0)
+        acc['output_tokens'] += u.get('output_tokens', 0)
+        acc['total_tokens'] += u.get('total_tokens', 0)
+        acc['api_calls'] += u.get('api_calls', 0)
+    return acc
+
+
+def generate_comment(posting, messages, client, model_name, usage=None):
+    """대화를 바탕으로 user_comment 1~3문장 요약 생성. usage 에 토큰 합산(과금 추적)."""
     sys = (
         '아래는 약국 구인공고 에러 케이스에 대한 대화형 검토 기록입니다. '
         '이 대화를 바탕으로 무엇을 어떻게 검토/수정했는지 1~3문장의 한국어로 요약하세요. '
@@ -591,6 +623,7 @@ def generate_comment(posting, messages, client, model_name):
             thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
+    add_response(usage, response)
     text = (response.text or '').strip()
     if not text:
         return '[대화형 검토] 검토 완료.'

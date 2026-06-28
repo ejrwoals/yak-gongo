@@ -381,13 +381,14 @@ window.AgentChat.open({ids, onCaseFinished, onClosed}) 로 연다.
     }
     if (data.fields && !fromTool) renderFields(data.fields, null);
     if (data.type === 'tool_request') {
-      agentRun.messages.push({ role: 'model', text: data.text || '', tool_call: data.tool_call });
+      // data.usage: 이 턴의 토큰 사용량. finish 시 세션 총합(1 이벤트)으로 합산되도록 메시지에 보관.
+      agentRun.messages.push({ role: 'model', text: data.text || '', tool_call: data.tool_call, usage: data.usage });
       if (data.text) appendModelMsg(data.text);
       agentRun.pending = data.tool_call;
       renderToolCard(data.tool_call);
       setBusy(false, true);
     } else {
-      agentRun.messages.push({ role: 'model', text: data.reply });
+      agentRun.messages.push({ role: 'model', text: data.reply, usage: data.usage });
       appendModelMsg(data.reply);
       setBusy(false);
     }

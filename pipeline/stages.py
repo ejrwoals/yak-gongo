@@ -19,7 +19,19 @@ from google import genai
 
 from postings.models import JobPosting, PipelineRun, RawPosting
 from pipeline.runner import process_posting
+from pipeline.usage import new_accumulator, record_llm_usage
+from pipeline.pricing import compute_cost
 from geo.mapping import normalize_city, assign_big_category
+
+
+def _usage_summary(acc: dict, model_name: str) -> dict:
+    """accumulator 를 모달 표시용 요약(토큰/비용)으로 변환."""
+    return {
+        'input_tokens': acc['input_tokens'],
+        'output_tokens': acc['output_tokens'],
+        'total_tokens': acc['total_tokens'],
+        'cost_usd': compute_cost(model_name, acc['input_tokens'], acc['output_tokens']),
+    }
 
 
 def _default_log(msg: str):
@@ -237,18 +249,23 @@ def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
     log(f'URL  : {raw.url}')
     log(f'제목 : {raw.title}')
 
+    # 토큰 사용량 accumulator. process_posting 이 Task1~5 동안 여기에 누적한다.
+    # 급여 미명시(skip)·예외 상황에서도 caller(여기)가 읽어 기록할 수 있도록 인자로 관통시킨다.
+    acc = new_accumulator()
+
     # stdout 캡처 (tasks/validator의 print() 포함)
     captured = io.StringIO()
     old_stdout = sys.stdout
     sys.stdout = captured
     try:
-        pipeline_result = process_posting(raw.body, client, model_name, log=log)
+        pipeline_result = process_posting(raw.body, client, model_name, log=log, usage=acc)
     except Exception as e:
         sys.stdout = old_stdout
         log(f'[PIPELINE ERROR] {raw.url}: {e}')
         raw.status = RawPosting.STATUS_ERROR
         raw.error_log = str(e)
         raw.save(update_fields=['status', 'error_log'])
+        # failed(예외 중단)는 비용을 기록하지 않는다(기록 규칙).
         return {**base, 'status': 'failed', 'note': str(e)}
     finally:
         sys.stdout = old_stdout
@@ -261,8 +278,11 @@ def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
         raw.processed_at = timezone.now()
         raw.save(update_fields=['status', 'processed_at'])
         log('  → 급여 미명시, 저장 건너뜀')
+        # JobPosting 은 없지만 Task1 토큰은 썼으므로 raw_posting_id 로 기록.
+        record_llm_usage('process', model_name, acc, raw_posting_id=raw.id, status='skipped')
         return {**base, 'status': 'skipped', 'note': '급여 미명시',
-                'steps': [{'task': 'Task1 급여', 'detail': '급여 미명시 → 저장 건너뜀', 'error': False}]}
+                'steps': [{'task': 'Task1 급여', 'detail': '급여 미명시 → 저장 건너뜀', 'error': False}],
+                'usage': _usage_summary(acc, model_name)}
 
     # UI 현황판용 단계 요약은 DB 필드가 아니므로 JobPosting 생성 전에 분리한다.
     steps = pipeline_result.pop('steps', [])
@@ -288,13 +308,18 @@ def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
     raw.processed_at = timezone.now()
     raw.save(update_fields=['status', 'processed_at'])
 
+    status = 'error' if pipeline_result.get('gpt_error_log') else 'ok'
+    record_llm_usage('process', model_name, acc, job_posting=posting,
+                     raw_posting_id=raw.id, status=status)
+    usage = _usage_summary(acc, model_name)
+
     fields = _summary_fields(posting)
-    if pipeline_result.get('gpt_error_log'):
+    if status == 'error':
         log('  → 저장 완료 (has_error=True)')
         return {**base, 'status': 'error', 'note': pipeline_result.get('gpt_error_log', '')[:200],
-                'steps': steps, 'fields': fields}
+                'steps': steps, 'fields': fields, 'usage': usage}
     log('  → 저장 완료 ✓')
-    return {**base, 'status': 'ok', 'note': '', 'steps': steps, 'fields': fields}
+    return {**base, 'status': 'ok', 'note': '', 'steps': steps, 'fields': fields, 'usage': usage}
 
 
 def _summary_fields(posting) -> list[dict]:

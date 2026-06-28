@@ -21,6 +21,7 @@ from .models import (
     AgentReviewSession,
     DashboardSnapshot,
     JobPosting,
+    LLMUsageEvent,
     PipelineRun,
     RawPosting,
 )
@@ -47,7 +48,7 @@ class JobPostingAdmin(admin.ModelAdmin):
     list_display = (
         'title_short', 'created_at', 'platform', 'city',
         'hourly_wage_display', 'net_salary_display', 'is_one_time_work_display', 'admin_check_display', 'has_error',
-        'link_display',
+        'llm_cost_display', 'link_display',
     )
     list_display_links = ('title_short',)
     list_filter = (
@@ -67,7 +68,14 @@ class JobPostingAdmin(admin.ModelAdmin):
     def admin_check_display(self, obj):
         return hasattr(obj, 'admin_check')
 
-    readonly_fields = ('url', 'inserted_at', 'gpt_output_log', 'gpt_error_log', 'body')
+    @admin.display(description='LLM 비용', ordering='llm_cost_usd')
+    def llm_cost_display(self, obj):
+        if not obj.llm_cost_usd:
+            return '-'
+        return f'${obj.llm_cost_usd:.4f}'
+
+    readonly_fields = ('url', 'inserted_at', 'gpt_output_log', 'gpt_error_log', 'body',
+                       'llm_cost_usd', 'llm_total_tokens')
 
     fieldsets = (
         ('기본 정보', {
@@ -88,6 +96,10 @@ class JobPostingAdmin(admin.ModelAdmin):
         }),
         ('LLM 결과', {
             'fields': ('llm_model', 'gpt_summary', 'gpt_output_log', 'gpt_error_log'),
+            'classes': ('collapse',),
+        }),
+        ('LLM 비용 (누적)', {
+            'fields': ('llm_cost_usd', 'llm_total_tokens'),
             'classes': ('collapse',),
         }),
         ('검토 / 품질', {
@@ -150,6 +162,8 @@ class JobPostingAdmin(admin.ModelAdmin):
                  name='jobposting_prestage_pending'),
             path('review/prestage/process-one/', self.admin_site.admin_view(self.prestage_process_one_view),
                  name='jobposting_prestage_process_one'),
+            path('review/token-usage/', self.admin_site.admin_view(self.token_usage_view),
+                 name='jobposting_token_usage'),
             path('review/verify-candidates/', self.admin_site.admin_view(self.review_verify_candidates_view),
                  name='jobposting_review_verify_candidates'),
             path('review/auto-verify/', self.admin_site.admin_view(self.review_auto_verify_view),
@@ -512,6 +526,75 @@ class JobPostingAdmin(admin.ModelAdmin):
         result = process_raw_posting(raw, client, settings.LLM_MODEL, log=lambda m: None)
         return JsonResponse({'ok': True, 'result': result})
 
+    def token_usage_view(self, request):
+        """LLM 토큰/비용 통계 페이지. LLMUsageEvent 를 날짜별/단계별/모델별로 집계.
+
+        '공고당 평균 비용' = 총비용 ÷ 처리한 고유 공고 수(job_posting non-null).
+        skipped(공고 없음) 비용도 총비용에는 포함되므로 평균에 부대비용으로 반영된다.
+        """
+        from django.db.models import Count, Sum
+        from django.db.models.functions import TruncDate
+
+        qs = LLMUsageEvent.objects.all()
+
+        def _avg(cost, postings):
+            return (cost / postings) if postings else 0.0
+
+        def _rows(values_key):
+            rows = (qs.values(values_key)
+                      .annotate(events=Count('id'),
+                                postings=Count('job_posting', distinct=True),
+                                input_tokens=Sum('input_tokens'),
+                                output_tokens=Sum('output_tokens'),
+                                total_tokens=Sum('total_tokens'),
+                                cost=Sum('cost_usd')))
+            out = []
+            for r in rows:
+                r['avg_cost'] = _avg(r['cost'] or 0, r['postings'])
+                out.append(r)
+            return out
+
+        # 날짜별 (최신순)
+        daily = (qs.annotate(day=TruncDate('created_at'))
+                   .values('day')
+                   .annotate(events=Count('id'),
+                             postings=Count('job_posting', distinct=True),
+                             input_tokens=Sum('input_tokens'),
+                             output_tokens=Sum('output_tokens'),
+                             total_tokens=Sum('total_tokens'),
+                             cost=Sum('cost_usd'))
+                   .order_by('-day'))
+        daily = list(daily)
+        for r in daily:
+            r['avg_cost'] = _avg(r['cost'] or 0, r['postings'])
+
+        stage_labels = dict(LLMUsageEvent.STAGE_CHOICES)
+        by_stage = _rows('stage')
+        for r in by_stage:
+            r['stage_label'] = stage_labels.get(r['stage'], r['stage'])
+        by_model = _rows('model')
+
+        grand = qs.aggregate(
+            events=Count('id'),
+            postings=Count('job_posting', distinct=True),
+            input_tokens=Sum('input_tokens'),
+            output_tokens=Sum('output_tokens'),
+            total_tokens=Sum('total_tokens'),
+            cost=Sum('cost_usd'),
+        )
+        grand['avg_cost'] = _avg(grand['cost'] or 0, grand['postings'] or 0)
+
+        context = {
+            **self.admin_site.each_context(request),
+            'title': 'LLM Token Usage',
+            'opts': self.model._meta,
+            'daily': daily,
+            'by_stage': by_stage,
+            'by_model': by_model,
+            'grand': grand,
+        }
+        return render(request, 'admin/postings/jobposting/token_usage.html', context)
+
     def review_verify_candidates_view(self, request):
         """AJAX GET: 현재 프리셋의 LLM 자동 검토 대상 공고 id 목록 반환."""
         preset_key = request.GET.get('preset', '')
@@ -546,6 +629,7 @@ class JobPostingAdmin(admin.ModelAdmin):
         from django.conf import settings
         from google import genai
         from .review_verify import apply_verdict, verify_posting
+        from pipeline.usage import new_accumulator, record_llm_usage
 
         if not settings.GOOGLE_API_KEY:
             return JsonResponse({'ok': False, 'error': 'GOOGLE_API_KEY 미설정'}, status=500)
@@ -568,9 +652,12 @@ class JobPostingAdmin(admin.ModelAdmin):
                 counts['skipped'] += 1
                 continue
             note = ''
+            acc = new_accumulator()
             try:
-                verdict = verify_posting(posting, preset_key, client, model_name)
+                verdict = verify_posting(posting, preset_key, client, model_name, usage=acc)
                 status = apply_verdict(posting, verdict)
+                # 정상 완료(ok/error)만 비용 기록. record_llm_usage 가 failed 는 건너뛴다.
+                record_llm_usage('verify', model_name, acc, job_posting=posting, status=status)
                 if status == 'error':
                     # gpt_error_log 첫 줄(요약)을 진행 로그용 사유로
                     note = (posting.gpt_error_log or '').strip().split('\n', 1)[0][:120]
@@ -678,9 +765,12 @@ class JobPostingAdmin(admin.ModelAdmin):
             return payload
         posting, client, model_name, data = payload
         messages = data.get('messages') or []
-        from .review_agent import collect_applied_changes, generate_comment
+        from .review_agent import collect_applied_changes, generate_comment, sum_session_usage
+        from pipeline.usage import record_llm_usage
+        # 세션 동안 각 턴에 누적된 토큰 + 코멘트 생성 토큰을 합산해 '세션당 1 이벤트'로 기록.
+        acc = sum_session_usage(messages)
         try:
-            comment = generate_comment(posting, messages, client, model_name)
+            comment = generate_comment(posting, messages, client, model_name, usage=acc)
         except Exception as e:  # noqa: BLE001
             print(f'[agent-finish ERROR] pk={posting.pk}: {e}')
             comment = '[대화형 검토] 검토 완료.'
@@ -695,6 +785,8 @@ class JobPostingAdmin(admin.ModelAdmin):
             applied_changes=collect_applied_changes(messages),
             generated_comment=comment,
         )
+        if acc['api_calls']:
+            record_llm_usage('agent', model_name, acc, job_posting=posting, status='ok')
         return JsonResponse({'ok': True, 'comment': comment})
 
     @staticmethod
@@ -869,6 +961,42 @@ class DashboardSnapshotAdmin(admin.ModelAdmin):
     list_display = ('created_at', 'posting_count')
     ordering = ('-created_at',)
     readonly_fields = ('created_at', 'posting_count', 'data')
+
+
+@admin.register(LLMUsageEvent)
+class LLMUsageEventAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'stage', 'model', 'status',
+                    'tokens_display', 'cost_display', 'posting_link')
+    list_filter = ('stage', 'status', 'model',
+                   ('created_at', DateRangeFilterBuilder(title='기록 일시')))
+    search_fields = ('job_posting__title', 'job_posting__url')
+    ordering = ('-created_at',)
+    readonly_fields = ('created_at', 'stage', 'model', 'job_posting', 'raw_posting_id',
+                       'status', 'api_calls', 'input_tokens', 'output_tokens',
+                       'total_tokens', 'cost_usd')
+
+    @admin.display(description='Total tokens', ordering='total_tokens')
+    def tokens_display(self, obj):
+        from postings.templatetags.usage_extras import kfmt
+        return kfmt(obj.total_tokens)
+
+    @admin.display(description='Cost (USD)', ordering='cost_usd')
+    def cost_display(self, obj):
+        return f'${obj.cost_usd:.4f}'
+
+    @admin.display(description='공고')
+    def posting_link(self, obj):
+        """제목 대신 상세 뷰로 가는 내부 링크 버튼만 표시."""
+        if obj.job_posting_id:
+            url = reverse('admin:postings_jobposting_change', args=[obj.job_posting_id])
+            return format_html('<a class="button" href="{}">공고 #{} ↗</a>', url, obj.job_posting_id)
+        if obj.raw_posting_id:
+            url = reverse('admin:postings_rawposting_change', args=[obj.raw_posting_id])
+            return format_html('<a class="button" href="{}">원문 #{} ↗</a>', url, obj.raw_posting_id)
+        return '-'
+
+    def has_add_permission(self, request):
+        return False  # 시스템이 자동 기록하는 로그라 수기 추가를 막는다.
 
     def get_urls(self):
         urls = super().get_urls()

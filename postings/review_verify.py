@@ -201,13 +201,19 @@ def build_user_prompt(posting, focus):
     return '\n'.join(parts)
 
 
-def verify_posting(posting, preset_key, client, model_name):
-    """Gemini 1회 호출로 검산. verdict dict(또는 파싱 실패 시 None) 반환."""
+def verify_posting(posting, preset_key, client, model_name, usage=None):
+    """Gemini 1회 호출로 검산. verdict dict(또는 파싱 실패 시 None) 반환.
+
+    usage 가 주어지면 호출 토큰 사용량을 그 accumulator 에 합산한다(과금 추적용).
+    """
+    from pipeline.usage import add_response
+
     focus = REVIEW_PRESETS.get(preset_key, {}).get('verify_focus', '')
     prompt = VERIFY_SYSTEM_PROMPT + '\n' + build_user_prompt(posting, focus)
     response = client.models.generate_content(
         model=model_name, contents=prompt, config=_GEN_CONFIG,
     )
+    add_response(usage, response)
     text = response.text or ''
     verdict, _ = extract_json(text)
     if verdict is not None:

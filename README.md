@@ -21,7 +21,8 @@
 8. [모듈별 설명](#모듈별-설명)
 9. [LLM 파이프라인 상세](#llm-파이프라인-상세)
 10. [데이터 모델](#데이터-모델)
-11. [일회성 데이터 마이그레이션](#일회성-데이터-마이그레이션)
+11. [LLM 비용 모니터링](#llm-비용-모니터링)
+12. [일회성 데이터 마이그레이션](#일회성-데이터-마이그레이션)
 
 ---
 
@@ -34,8 +35,8 @@ yak-gongo/
 │   └── urls.py
 │
 ├── postings/                # 핵심 앱: 공고 DB + Admin
-│   ├── models.py            # JobPosting, RawPosting, AdminCheck, AgentReviewSession, PipelineRun, DashboardSnapshot
-│   ├── admin.py             # Admin 커스터마이징 + 리뷰 대시보드 pre-단계(크롤링·LLM 프로세싱) UI + 대시보드 스냅샷 갱신 버튼 (admin 홈 index_template도 교체)
+│   ├── models.py            # JobPosting, RawPosting, AdminCheck, AgentReviewSession, PipelineRun, DashboardSnapshot, LLMUsageEvent
+│   ├── admin.py             # Admin 커스터마이징 + 리뷰 대시보드 pre-단계(크롤링·LLM 프로세싱) UI + 대시보드 스냅샷 갱신 버튼 + Token Usage 통계 페이지 + LLMUsageEvent admin (admin 홈 index_template도 교체)
 │   ├── review_presets.py    # 리뷰 대시보드 프리셋 정의 (탭별 필터·컬럼, LLM 검토 대상/포커스)
 │   ├── review_verify.py     # 2단계 outlier 공고 LLM(Gemini) 재검산 서비스 (DOMAIN_RULES 공유 상수)
 │   ├── review_agent.py      # 3단계 에러 케이스 대화형 agent 검토 서비스 (Gemini multi-turn + 구조화 출력, 파생 필드 서버 재계산)
@@ -50,13 +51,16 @@ yak-gongo/
 │   │   ├── run_statistics.py # DB → DataFrame 변환 후 Notion 통계 차트 생성
 │   │   ├── auto_verify_step3.py # 2단계 outlier 공고 LLM 일괄 자동 검토 (CLI)
 │   │   └── ceil_hourly_wages.py # 시급 올림 보정 일괄 적용 (1회성)
+│   ├── templatetags/
+│   │   └── usage_extras.py   # kfmt 필터 — 토큰 수 k/M 축약 표시
 │   └── templates/admin/
-│       ├── index_with_dashboard.html         # admin 홈에 "공고 리뷰 대시보드" 진입 버튼 추가 (admin.site.index_template)
+│       ├── index_with_dashboard.html         # admin 홈에 "공고 리뷰 대시보드"·"Token Usage" 진입 버튼 추가 (admin.site.index_template)
 │       └── postings/
 │           ├── jobposting/
 │           │   ├── review_dashboard.html        # 리뷰 대시보드 (pre-단계 + 프리셋 탭 + "대시보드 업데이트" 버튼)
 │           │   ├── prestage_scrape_form.html     # pre-1단계: 크롤링 실행 폼 fragment
-│           │   └── prestage_pending.html         # pre-2단계: LLM 처리 대기 목록 fragment
+│           │   ├── prestage_pending.html         # pre-2단계: LLM 처리 대기 목록 fragment
+│           │   └── token_usage.html             # LLM 토큰/비용 통계 페이지 (날짜·단계·모델별 집계)
 │           └── pipelinerun/
 │               └── run_log.html     # 실시간 로그 폴링 페이지
 │
@@ -66,7 +70,9 @@ yak-gongo/
 │   ├── runner.py            # process_posting() — 단일 공고 오케스트레이터
 │   ├── stages.py            # scrape_stage / process_stage / process_raw_posting — 2단계 파이프라인 공통 로직
 │   ├── validator.py         # error_check() — LLM 출력 일관성 검증
-│   └── salary.py            # to_net_salary() — 세후 월급 계산, ceil_hourly_wage() — 시급 올림 보정
+│   ├── salary.py            # to_net_salary() — 세후 월급 계산, ceil_hourly_wage() — 시급 올림 보정
+│   ├── pricing.py           # PRICING 단가표 + compute_cost() — 토큰 → USD 비용 (settings.LLM_PRICING으로 덮어쓰기 가능)
+│   └── usage.py             # 토큰 사용량 캡처(extract_usage)·누적(accumulator)·기록(record_llm_usage) 유틸
 │
 ├── scraper/                 # 웹 스크래퍼 (Selenium)
 │   ├── yakdap.py            # 약문약답 스크래퍼 (on_item 콜백으로 건별 중간 저장 지원)
@@ -193,6 +199,8 @@ NOTION_TOKEN=your-notion-integration-token
 
 - **GOOGLE_API_KEY** 발급: [Google AI Studio](https://aistudio.google.com/) → 'Get API key'
 - **NOTION_TOKEN** 발급: [Notion Integrations](https://www.notion.so/my-integrations) → 내부 통합 생성 후 토큰 복사
+
+> **LLM 토큰 단가**: 비용 계산 단가표는 `pipeline/pricing.py`의 `DEFAULT_PRICING`(USD/1M tokens)에 두며, 필요 시 `settings.LLM_PRICING` dict로 모델별 `(입력, 출력)` 단가를 덮어쓸 수 있다 ([LLM 비용 모니터링](#llm-비용-모니터링) 참고).
 
 ---
 
@@ -604,6 +612,8 @@ python manage.py run_statistics --output-dir /path/to/output
 | `stages.py` | 2단계 파이프라인 공통 로직. `scrape_stage()` — 크롤링하여 `RawPosting(pending)` 저장. `process_stage()` — pending RawPosting을 일괄 LLM 처리. `process_raw_posting(raw, client, ...)` — 단일 RawPosting 처리 단위 함수(일괄 처리와 대시보드 건별 처리가 공유). 대시보드 모달용으로 `process_posting`의 `steps`와 핵심 추출 필드 요약(`_summary_fields`: 시급·월급·지역·근무형태·주당 시간)을 반환 dict에 실어 보낸다. 모두 멱등하다 |
 | `validator.py` | `error_check(d, error_history)` — 시급·근무 시간 일관성 검증, 주당 근무 시간 재계산 |
 | `salary.py` | `to_net_salary(wage, is_after_tax)` — 세전이면 2차 회귀 공식으로 세후 변환. `calculate_net_salary(gross_monthly)` — 세전 월급 → 세후 월급 환산(공식 본체, 대화형 agent의 세전 환산도 이 함수를 공유). `ceil_hourly_wage(value)` — 시급을 소수점 셋째 자리에서 올림(둘째 자리까지) 보정 |
+| `pricing.py` | `DEFAULT_PRICING`(모델별 USD/1M tokens 단가) + `compute_cost(model, in, out)` — 토큰 수 → USD. `settings.LLM_PRICING`으로 덮어쓰기 가능, 미등록 모델은 prefix 매칭 후 flash 폴백 |
+| `usage.py` | LLM 토큰 사용량 캡처/기록 유틸. `extract_usage(response)`(출력 = candidates + thoughts), `new_accumulator()`·`add_response()`(단계 내 호출 누적), `record_llm_usage(stage, model, acc, ...)`(`LLMUsageEvent` 1 row 기록 + `JobPosting` 비용 캐시 `F()` 증분, `failed`는 건너뜀) |
 
 **직접 사용 예시:**
 
@@ -737,6 +747,10 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `gpt_error_log` | TextField | 에러 발생 시 상세 메시지 |
 | `has_error` | BooleanField | 에러 발생 여부 — `gpt_error_log`가 비어 있지 않으면 `save()` 시 자동으로 `True` 설정 |
 | `user_comment` | TextField | 개인 메모. LLM 자동 검토 합격 시 `[LLM 합격] ...` 사유가 기록될 수 있음 (기존 사람 코멘트는 보존) |
+| `llm_cost_usd` | FloatField | 이 공고에 든 LLM 누적 비용(USD). `LLMUsageEvent` 합계의 비정규화 캐시 — 단계(process→verify→agent)가 쌓일수록 커진다 (목록 정렬·"비싼 공고" 식별용) |
+| `llm_total_tokens` | IntegerField | 이 공고에 든 LLM 누적 토큰. 위와 동일한 비정규화 캐시 |
+
+> `llm_cost_usd`·`llm_total_tokens`는 표시·정렬용 비정규화 캐시이며 진실의 출처는 `LLMUsageEvent`다. 기록 시점에 `F()` 증분으로 더해진다 ([LLM 비용 모니터링](#llm-비용-모니터링) 참고).
 
 > 검토 완료 여부는 더 이상 `JobPosting`의 boolean 필드가 아니다. 별도의 `AdminCheck` 레코드 존재 여부가 단일 판정 기준이며, 쿼리에서는 `is_reviewed`(= `Exists(AdminCheck)`, source 무관) 주석으로 사용한다.
 
@@ -808,6 +822,53 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `created_at` | DateTimeField | 스냅샷 생성 시각 (`auto_now_add`) — 프론트의 "Last Update" |
 | `data` | JSONField | `compute_dashboard_data()` 결과 (페이지별 통계 dict) |
 | `posting_count` | IntegerField | 집계 대상 공고 수 (관리 목록 표시용) |
+
+### LLMUsageEvent
+
+LLM 한 작업 단위(**공고 1건 × 단계 1개**)의 토큰/비용 기록. 비용 추적의 **single source of truth**다. 단계 내부의 여러 Gemini 호출(예: process 단계의 Task 1~5)은 합산해 1 row로 남긴다. 자세한 정책은 [LLM 비용 모니터링](#llm-비용-모니터링) 참고.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `created_at` | DateTimeField (db_index) | 기록 시각 (`auto_now_add`) |
+| `stage` | CharField (choices) | `process`(pre-2 프로세싱) / `verify`(LLM 자동 검토) / `agent`(대화형 agent 검토) |
+| `model` | CharField | 사용한 Gemini 모델명 |
+| `job_posting` | ForeignKey → JobPosting (null) | 대상 공고. skipped(급여 미명시)는 JobPosting이 없어 `None` |
+| `raw_posting_id` | IntegerField (null) | skipped 등 JobPosting이 없을 때의 원문 ID |
+| `status` | CharField | `ok` / `error`(저장 성공+검산 경고) / `skipped`(급여 미명시). `failed`(파이프라인 예외 중단)는 **기록하지 않음** |
+| `api_calls` | IntegerField | 단계 내부 Gemini 호출 횟수 |
+| `input_tokens` | IntegerField | 입력(프롬프트) 토큰 |
+| `output_tokens` | IntegerField | 출력 토큰 = candidates + thoughts(사고 토큰) |
+| `total_tokens` | IntegerField | 총 토큰 |
+| `cost_usd` | FloatField | 기록 시점 단가(`pipeline.pricing`)로 계산해 박아넣은 **스냅샷** 비용. 단가가 나중에 바뀌어도 과거 row는 소급 변경되지 않는다 (토큰이 원본, 비용은 파생 → 필요 시 토큰 × 새 단가로 백필 가능) |
+
+---
+
+## LLM 비용 모니터링
+
+Gemini API는 입력/출력 토큰을 따로 과금하므로, 파이프라인의 LLM 사용량과 비용을 추적하는 시스템을 둔다. 비용 추적의 진실의 출처는 `LLMUsageEvent` 모델이며, 세 호출 경로가 모두 이를 통해 기록된다.
+
+### 기록 단위와 규칙
+
+- **공고 1건 × 단계 1개 = 이벤트 1 row.** 단계 내부의 여러 Gemini 호출은 합산한다 (예: process 단계의 Task 1~5는 한 row).
+- 단계는 세 가지: `process`(pre-2 프로세싱), `verify`(LLM 자동 검토), `agent`(대화형 agent 검토). agent 세션은 매 턴 누적 토큰 + 코멘트 생성 토큰을 합산해 "세션당 1 이벤트"로 남긴다.
+- 정상 완료만 기록한다: `ok` / `error`(저장 성공 + 검산 경고) / `skipped`(급여 미명시). `failed`(파이프라인 예외로 중단)는 기록하지 않는다.
+- skipped는 JobPosting이 없으므로 `job_posting=None`, `raw_posting_id`만 남는다. 전체 비용 = 모든 row 합, DB 등록 공고만 = `job_posting__isnull=False` 필터.
+
+### 토큰 캡처와 비용 계산
+
+- 토큰은 Gemini 응답의 `usage_metadata`에서 뽑는다 (`pipeline/usage.py`의 `extract_usage`). 출력 토큰은 `candidates + thoughts`(사고 토큰; 과금 대상)를 합산한다. 세 호출 경로가 usage accumulator dict를 함께 넘겨받아 단계 내 호출을 누적한 뒤 `record_llm_usage`로 1 row를 남긴다.
+- 단가표는 `pipeline/pricing.py`의 `DEFAULT_PRICING`(USD/1M tokens)에 두고 `compute_cost`로 계산한다. `settings.LLM_PRICING` dict로 모델별 `(입력, 출력)` 단가를 덮어쓸 수 있으며, 미등록 모델은 prefix 매칭(예: `gemini-2.5-flash-preview-*`) 후 flash 폴백 단가를 쓴다.
+- **비용은 기록 시점 단가로 계산해 `cost_usd`에 고정 저장하는 스냅샷이다.** 단가가 나중에 바뀌어도 과거 row의 비용은 소급 변경되지 않고(그때 실제로 낸 비용 보존), 통계 페이지도 저장된 `cost_usd`를 합산할 뿐 재계산하지 않는다. 토큰 수가 영구 진실이라 단가표가 바뀌면 토큰 × 새 단가로 백필(재계산)할 수 있다.
+- 기록 시 `JobPosting.llm_cost_usd`·`llm_total_tokens` 비정규화 캐시도 `F()` 증분으로 함께 더해진다 (목록 정렬·"비싼(까다로운) 공고" 식별용).
+
+### UI
+
+- **처리/검토 모달**: pre-2 프로세싱·LLM 자동 검토 모달의 각 행에 해당 공고의 토큰/비용이 축약 표시된다(예: `22.9k`, `usage_extras.kfmt` 필터).
+- **Token Usage 통계 페이지** (`review/token-usage/`): admin 홈(`/admin/`)의 **💰 Token Usage** 버튼으로 진입. `LLMUsageEvent`를 **날짜별·단계별·모델별**로 집계해 이벤트 수·고유 공고 수·입출력/총 토큰·총비용과 **공고당 평균 비용**(총비용 ÷ 처리한 고유 공고 수)을 보여준다. skipped 비용도 총비용에 포함되어 평균에 부대비용으로 반영된다.
+- **공고 목록**: `JobPosting` 목록에 **LLM 비용** 컬럼(`llm_cost_usd` 기준 정렬 가능)이 추가되고, 상세 화면에 "LLM 비용 (누적)" 접이식 섹션이 있다.
+- **LLMUsageEvent admin**: `Postings > Llm usage events`에서 개별 이벤트를 조회한다(읽기 전용, 수기 추가 불가). 단계·상태·모델·기록 일시로 필터하며, 각 행에서 대상 공고/원문 상세로 가는 링크 버튼을 제공한다.
+
+`django.contrib.humanize`를 `INSTALLED_APPS`에 추가해 숫자 포매팅을 보조한다.
 
 ---
 

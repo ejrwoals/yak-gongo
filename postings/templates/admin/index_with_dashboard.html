@@ -6,6 +6,9 @@
   <a href="{% url 'admin:jobposting_review' %}" class="dashboard-entry-btn">
     📋 공고 리뷰 대시보드 열기
   </a>
+  <a href="{% url 'admin:jobposting_token_usage' %}" class="dashboard-entry-btn secondary">
+    💰 Token Usage
+  </a>
 </div>
 
 <style>
@@ -20,6 +23,11 @@
   }
   a.dashboard-entry-btn:hover,
   a.dashboard-entry-btn:focus { background: #356179; color: #fff; }
+  a.dashboard-entry-btn.secondary,
+  a.dashboard-entry-btn.secondary:link,
+  a.dashboard-entry-btn.secondary:visited { background: #5b3fb0; }
+  a.dashboard-entry-btn.secondary:hover,
+  a.dashboard-entry-btn.secondary:focus { background: #4a3192; }
 </style>
 
 {{ block.super }}

@@ -48,6 +48,12 @@ class JobPosting(models.Model):
     has_error = models.BooleanField(default=False)
     user_comment = models.TextField(blank=True)
 
+    # --- LLM 비용 캐시 (LLMUsageEvent 합계의 비정규화 사본) ---
+    # 진실의 출처는 LLMUsageEvent. 이 column 은 목록 정렬/표시용 누적 캐시이며,
+    # 단계(process→verify→agent)가 쌓일수록 커진다 → '비싼(까다로운) 공고' 식별용.
+    llm_cost_usd = models.FloatField(default=0.0, verbose_name='LLM 누적 비용(USD)')
+    llm_total_tokens = models.IntegerField(default=0, verbose_name='LLM 누적 토큰')
+
     class Meta:
         ordering = ['-created_at']
         indexes = [
@@ -132,6 +138,56 @@ class DashboardSnapshot(models.Model):
 
     def __str__(self):
         return f"dashboard_snapshot @ {self.created_at:%Y-%m-%d %H:%M} ({self.posting_count}건)"
+
+
+class LLMUsageEvent(models.Model):
+    """LLM 한 작업 단위(공고 1건 × 단계 1개)의 토큰/비용 기록. 비용 추적의 single source of truth.
+
+    - 단계 내부의 여러 Gemini 호출(예: process 의 Task1~5)은 총합해 1 row 로 남긴다.
+    - 정상 완료만 기록: ok / error(저장 성공+검산 경고) / skipped(급여 미명시).
+      failed(파이프라인 예외로 중단)는 기록하지 않는다.
+    - skipped 는 JobPosting 이 없으므로 job_posting=None, raw_posting_id 만 남는다.
+    - 전체 비용 = 모든 row 합 / DB 등록 공고만 = job_posting__isnull=False 필터.
+
+    ★ cost_usd 는 기록 시점 단가(pipeline.pricing)로 계산해 박아넣는 '스냅샷'이다.
+      Google 이 나중에 단가를 올리거나 내려도 과거 row 는 소급 변경되지 않으며,
+      통계 페이지도 저장된 cost_usd 를 합산할 뿐 재계산하지 않는다(그때 실제로 낸 비용 보존).
+      input_tokens/output_tokens 가 영구 진실이라, 단가표가 바뀌거나 과거에 잘못 넣었다면
+      토큰 × 새 단가로 백필(재계산)할 수 있다.
+    """
+    STAGE_PROCESS = 'process'
+    STAGE_VERIFY = 'verify'
+    STAGE_AGENT = 'agent'
+    STAGE_CHOICES = [
+        (STAGE_PROCESS, 'pre-2 프로세싱'),
+        (STAGE_VERIFY, 'LLM 자동 검토'),
+        (STAGE_AGENT, '대화형 agent 검토'),
+    ]
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
+    model = models.CharField(max_length=100, blank=True)
+    job_posting = models.ForeignKey(
+        JobPosting, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='usage_events',
+    )
+    raw_posting_id = models.IntegerField(null=True, blank=True)
+    status = models.CharField(max_length=20, blank=True)  # ok|error|skipped (process 단계용)
+    api_calls = models.IntegerField(default=0)            # 내부 Gemini 호출 횟수
+    input_tokens = models.IntegerField(default=0)
+    output_tokens = models.IntegerField(default=0)        # candidates + thoughts(사고 토큰)
+    total_tokens = models.IntegerField(default=0)
+    cost_usd = models.FloatField(default=0.0)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['stage']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.stage}] {self.total_tokens}tok ${self.cost_usd:.4f} @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
 class PipelineRun(models.Model):

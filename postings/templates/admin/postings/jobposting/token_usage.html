@@ -1,0 +1,134 @@
+{% extends "admin/base_site.html" %}
+{% load humanize %}
+{% load usage_extras %}
+
+{% block title %}LLM Token Usage{% endblock %}
+
+{% block content %}
+<style>
+  .tu-wrap { max-width: 1100px; }
+  .tu-back { display: inline-block; margin-bottom: 14px; color: #417690; }
+  .tu-grand {
+    display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 24px;
+  }
+  .tu-card {
+    background: #f5f3fb; border: 1px solid #e3dcf3; border-radius: 8px;
+    padding: 12px 18px; min-width: 150px;
+  }
+  .tu-card .k { font-size: 12px; color: #868e96; }
+  .tu-card .v { font-size: 20px; font-weight: 700; color: #5b3fb0; margin-top: 2px; }
+  .tu-section { margin-top: 28px; }
+  .tu-section h2 { font-size: 15px; margin-bottom: 8px; }
+  table.tu { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.tu th, table.tu td {
+    border: 1px solid #e0e0e0; padding: 6px 10px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  table.tu th { background: #f3f2f7; text-align: right; }
+  table.tu th.l, table.tu td.l { text-align: left; }
+  table.tu tbody tr:nth-child(even) { background: #fafafa; }
+  table.tu td.cost { color: #5b3fb0; font-weight: 600; }
+  .tu-note { color: #888; font-size: 12px; margin-top: 6px; }
+</style>
+
+<div class="tu-wrap">
+  <a class="tu-back" href="{% url 'admin:jobposting_review' %}">← 공고 리뷰 대시보드</a>
+  <h1>💰 LLM Token Usage</h1>
+
+  {# ── 전체 합계 ── #}
+  <div class="tu-grand">
+    <div class="tu-card"><div class="k">총 비용 (USD)</div><div class="v">${{ grand.cost|default:0|floatformat:4 }}</div></div>
+    <div class="tu-card"><div class="k">총 토큰</div><div class="v" title="{{ grand.total_tokens|default:0|intcomma }}">{{ grand.total_tokens|default:0|kfmt }}</div></div>
+    <div class="tu-card"><div class="k">이벤트 수</div><div class="v">{{ grand.events|default:0|intcomma }}</div></div>
+    <div class="tu-card"><div class="k">처리 공고 수</div><div class="v">{{ grand.postings|default:0|intcomma }}</div></div>
+    <div class="tu-card"><div class="k">공고당 평균 (USD)</div><div class="v">${{ grand.avg_cost|default:0|floatformat:5 }}</div></div>
+  </div>
+  <p class="tu-note">
+    진실의 출처는 LLMUsageEvent. '처리 공고 수'는 고유 공고(JobPosting) 기준이며,
+    급여 미명시로 건너뛴(skipped) 비용도 총비용·공고당 평균에 포함됩니다.
+    단가는 settings.LLM_PRICING(USD/1M tokens)로 산정합니다.
+  </p>
+
+  {# ── 날짜별 ── #}
+  <div class="tu-section">
+    <h2>날짜별</h2>
+    <table class="tu">
+      <thead>
+        <tr>
+          <th class="l">날짜</th><th>이벤트</th><th>공고</th>
+          <th>입력 토큰</th><th>출력 토큰</th><th>총 토큰</th>
+          <th>비용 (USD)</th><th>공고당 평균</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in daily %}
+        <tr>
+          <td class="l">{{ r.day|date:"Y-m-d" }}</td>
+          <td>{{ r.events|intcomma }}</td>
+          <td>{{ r.postings|intcomma }}</td>
+          <td title="{{ r.input_tokens|default:0|intcomma }}">{{ r.input_tokens|default:0|kfmt }}</td>
+          <td title="{{ r.output_tokens|default:0|intcomma }}">{{ r.output_tokens|default:0|kfmt }}</td>
+          <td title="{{ r.total_tokens|default:0|intcomma }}">{{ r.total_tokens|default:0|kfmt }}</td>
+          <td class="cost">${{ r.cost|default:0|floatformat:4 }}</td>
+          <td>${{ r.avg_cost|floatformat:5 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td class="l" colspan="8">아직 기록된 LLM 사용 내역이 없습니다.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── 단계별 ── #}
+  <div class="tu-section">
+    <h2>단계별</h2>
+    <table class="tu">
+      <thead>
+        <tr>
+          <th class="l">단계</th><th>이벤트</th><th>공고</th>
+          <th>총 토큰</th><th>비용 (USD)</th><th>공고당 평균</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in by_stage %}
+        <tr>
+          <td class="l">{{ r.stage_label }}</td>
+          <td>{{ r.events|intcomma }}</td>
+          <td>{{ r.postings|intcomma }}</td>
+          <td title="{{ r.total_tokens|default:0|intcomma }}">{{ r.total_tokens|default:0|kfmt }}</td>
+          <td class="cost">${{ r.cost|default:0|floatformat:4 }}</td>
+          <td>${{ r.avg_cost|floatformat:5 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td class="l" colspan="6">없음</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── 모델별 ── #}
+  <div class="tu-section">
+    <h2>모델별</h2>
+    <table class="tu">
+      <thead>
+        <tr>
+          <th class="l">모델</th><th>이벤트</th>
+          <th>총 토큰</th><th>비용 (USD)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in by_model %}
+        <tr>
+          <td class="l">{{ r.model|default:"(미상)" }}</td>
+          <td>{{ r.events|intcomma }}</td>
+          <td title="{{ r.total_tokens|default:0|intcomma }}">{{ r.total_tokens|default:0|kfmt }}</td>
+          <td class="cost">${{ r.cost|default:0|floatformat:4 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td class="l" colspan="4">없음</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
