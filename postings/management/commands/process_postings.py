@@ -46,7 +46,7 @@ class Command(BaseCommand):
             if len(buffer) >= 10:
                 run.log_output += ''.join(buffer)
                 buffer.clear()
-                run.save(update_fields=['log_output', 'total_processed', 'total_errors'])
+                run.save(update_fields=['log_output', 'total_errors'])
 
         try:
             stats = process_stage(run, log=_log)

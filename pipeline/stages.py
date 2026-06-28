@@ -26,6 +26,24 @@ def _default_log(msg: str):
     print(msg)
 
 
+def scrape_param_fields(options: dict) -> dict:
+    """PipelineRun에 기록할 스크래핑 파라미터 필드를 옵션에서 추출한다.
+
+    yakdap → start_id/count/step, pharm_recruit → big_categories.
+    run 생성 시 **scrape_param_fields(options) 형태로 펼쳐 넣는다.
+    """
+    if options.get('source') == 'yakdap':
+        return {
+            'start_id': options.get('start_id'),
+            'count': options.get('count'),
+            'step': options.get('step'),
+        }
+    big = options.get('big_categories') or options.get('big_category') or []
+    if isinstance(big, str):
+        big = [big]
+    return {'big_categories': list(big)}
+
+
 # ── 스크래핑 단계 ──────────────────────────────────────────────────────────
 def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None, log=None) -> int:
     """공고를 크롤링하여 RawPosting으로 즉시 저장한다. 저장된(신규) 건수를 반환.
@@ -40,6 +58,15 @@ def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None,
     log(f'기존 URL {len(existing_urls)}개 로드 완료 (JobPosting + RawPosting)')
 
     saved = 0
+    errors = 0
+
+    def on_error(item_id, exc):
+        """스크래핑 건별 실패를 run.total_errors에 집계한다."""
+        nonlocal errors
+        errors += 1
+        if run is not None:
+            run.total_errors = errors
+            run.save(update_fields=['total_errors'])
 
     def on_item(record: dict):
         nonlocal saved
@@ -75,6 +102,7 @@ def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None,
             login_event=login_event,
             log=log,
             on_item=on_item,
+            on_error=on_error,
         )
     else:
         import math as _math
@@ -99,7 +127,10 @@ def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None,
                 on_item=on_item,
             )
 
-    log(f'스크래핑 완료: {saved}개 신규 저장 (RawPosting)')
+    done_msg = f'스크래핑 완료: {saved}개 신규 저장 (RawPosting)'
+    if errors:
+        done_msg += f', {errors}개 수집 실패'
+    log(done_msg)
     return saved
 
 
@@ -153,9 +184,8 @@ def process_stage(run: PipelineRun, log=None, client=None, model_name: str = '')
             skipped += 1
 
         if run is not None:
-            run.total_processed = processed
             run.total_errors = errors
-            run.save(update_fields=['total_processed', 'total_errors'])
+            run.save(update_fields=['total_errors'])
 
     log(f'\n{"="*40}')
     log(f'완료: {processed}개 저장, {errors}개 에러')

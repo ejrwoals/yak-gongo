@@ -66,6 +66,7 @@ def scrape(
     login_event: threading.Event | None = None,
     log=None,
     on_item=None,
+    on_error=None,
 ) -> list[dict]:
     """
     약문약답 공고를 순회하여 raw posting dict 리스트를 반환.
@@ -78,6 +79,7 @@ def scrape(
         headless:      헤드리스 모드 여부
         existing_urls: 이미 DB에 존재하는 URL 집합 (중복 스킵용)
         on_item:       공고 1건을 수집할 때마다 호출되는 콜백(dict). 중간 저장용.
+        on_error:      공고 1건 수집이 실패할 때마다 호출되는 콜백(item_id, exc). 에러 집계용.
 
     Returns:
         list of dict with keys:
@@ -176,6 +178,8 @@ def scrape(
 
             except Exception as e:
                 _log(f'{num_id} 번 글 수집 실패: {e}')
+                if on_error is not None:
+                    on_error(num_id, e)
 
     finally:
         driver.quit()

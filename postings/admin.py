@@ -355,12 +355,40 @@ class JobPostingAdmin(admin.ModelAdmin):
 
     # ── pre-단계: 크롤링 / LLM 프로세싱 ──────────────────────────
     def prestage_scrape_form_view(self, request):
-        """AJAX GET: pre-1단계 크롤링 실행 폼 fragment."""
+        """AJAX GET: pre-1단계 크롤링 실행 폼 fragment.
+
+        시작 ID는 마지막 yakdap 실행에서 이어받는다: 직전 실행이 훑은 마지막 ID
+        다음(start_id + count*step)을 기본값으로 채워, 다음 크롤링이 자연스럽게 이어진다.
+        지역 대분류도 마지막 pharm_recruit 실행에서 선택했던 값을 기본값으로 쓴다.
+        """
         already_running = PipelineRun.objects.filter(status='running').first()
+
+        # 기본값(이력이 없을 때)
+        start_id, count, step = 38800, 100, 2
+        big_categories = ['서울']
+
+        last_yakdap = (
+            PipelineRun.objects.filter(source='yakdap', start_id__isnull=False)
+            .order_by('-started_at').first()
+        )
+        if last_yakdap:
+            count = last_yakdap.count or count
+            step = last_yakdap.step or step
+            # 직전 실행이 훑은 범위 다음 ID부터 이어서 시작
+            start_id = last_yakdap.start_id + count * step
+
+        last_pharm = (
+            PipelineRun.objects.filter(source='pharm_recruit')
+            .exclude(big_categories=[])
+            .order_by('-started_at').first()
+        )
+        if last_pharm and last_pharm.big_categories:
+            big_categories = last_pharm.big_categories
+
         form = PipelineRunForm(initial={
             'source': 'yakdap',
-            'start_id': 38800, 'count': 100, 'step': 2,
-            'big_categories': ['서울'], 'headless': True,
+            'start_id': start_id, 'count': count, 'step': step,
+            'big_categories': big_categories, 'headless': True,
         })
         ctx = {'form': form, 'already_running': already_running}
         if already_running:
@@ -386,8 +414,10 @@ class JobPostingAdmin(admin.ModelAdmin):
 
         kwargs = form.get_command_kwargs()
         kwargs['dry_run'] = True  # 크롤링만: RawPosting까지만 저장하고 LLM은 pre-2단계에서
+        from pipeline.stages import scrape_param_fields
         run = PipelineRun.objects.create(
             source=kwargs['source'], status='running', log_output='크롤링 시작...\n',
+            **scrape_param_fields(kwargs),
         )
         _start_pipeline_thread(run.id, kwargs)
         return JsonResponse({
@@ -698,7 +728,20 @@ class JobPostingAdmin(admin.ModelAdmin):
 
 @admin.register(PipelineRun)
 class PipelineRunAdmin(admin.ModelAdmin):
-    list_display = ('source', 'started_at', 'finished_at', 'total_scraped', 'total_processed', 'total_errors', 'status')
+    # PipelineRun은 이제 스크래핑(크롤링) 실행 기록이다. LLM 처리는 대시보드가 RawPosting을
+    # 건별로 돌리며 PipelineRun을 거치지 않는다. finished_at은 목록에서 제외한다.
+    list_display = ('source', 'started_at', 'params_summary', 'total_scraped', 'total_errors', 'status')
+
+    @admin.display(description='파라미터')
+    def params_summary(self, obj):
+        """어떤 파라미터로 돌렸는지 한 줄 요약."""
+        if obj.source == 'yakdap':
+            if obj.start_id is None:
+                return '-'
+            return f'ID {obj.start_id}부터 {obj.count}개 / step {obj.step}'
+        if obj.big_categories:
+            return ', '.join(obj.big_categories)
+        return '-'
     list_filter = ('source', 'status')
     ordering = ('-started_at',)
     readonly_fields = ('started_at',)
@@ -736,7 +779,6 @@ class PipelineRunAdmin(admin.ModelAdmin):
             'status': run.status,
             'log_output': run.log_output,
             'total_scraped': run.total_scraped,
-            'total_processed': run.total_processed,
             'total_errors': run.total_errors,
             'started_at': run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else None,
             'finished_at': run.finished_at.strftime('%Y-%m-%d %H:%M:%S') if run.finished_at else None,

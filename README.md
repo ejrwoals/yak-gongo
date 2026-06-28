@@ -624,7 +624,7 @@ result = process_posting(body="...", client=client, model_name=settings.LLM_MODE
 
 | 파일 | 역할 |
 |---|---|
-| `yakdap.py` | `scrape(start_id, count, step, year=None, ..., on_item=None)` → `list[dict]`. 약문약답이 styled-components 해시 클래스(`sc-*`)를 쓰므로 재배포 시 깨지지 않도록, 시맨틱 클래스(`title-container`, `detail__pharmacy-name`, `detail__pharmacy-address`, `detail__message`)와 표는 라벨 텍스트 기반 XPath(급여·근무시간)로 선택한다 (`main` 기준 앵커). 등록일은 `_parse_created_at()`이 절대형(`2024년 11월 22일`)·상대형(`어제 오전 8:17`, `N시간 전`, `N분 전`, 시각만 `오전 8:36`=오늘)을 모두 `YYYY-MM-DD`로 변환한다. 절대형에 연도가 없으면 `year`(폴백, `None`이면 현재 연도)를 쓴다 |
+| `yakdap.py` | `scrape(start_id, count, step, year=None, ..., on_item=None, on_error=None)` → `list[dict]`. `on_error(item_id, exc)`는 건별 수집 실패를 알려 호출부가 `PipelineRun.total_errors`에 집계하게 한다. 약문약답이 styled-components 해시 클래스(`sc-*`)를 쓰므로 재배포 시 깨지지 않도록, 시맨틱 클래스(`title-container`, `detail__pharmacy-name`, `detail__pharmacy-address`, `detail__message`)와 표는 라벨 텍스트 기반 XPath(급여·근무시간)로 선택한다 (`main` 기준 앵커). 등록일은 `_parse_created_at()`이 절대형(`2024년 11월 22일`)·상대형(`어제 오전 8:17`, `N시간 전`, `N분 전`, 시각만 `오전 8:36`=오늘)을 모두 `YYYY-MM-DD`로 변환한다. 절대형에 연도가 없으면 `year`(폴백, `None`이면 현재 연도)를 쓴다 |
 | `pharm_recruit.py` | `scrape(big_category, year=None, ..., on_item=None)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원. 팜리크루트는 월/일만 표시되므로 등록일 연도는 `year`(`None`이면 현재 연도)로 보정한다. 중복 URL 스킵 시에도 로그를 남겨 재크롤링 진행 상황이 끊겨 보이지 않는다 |
 | `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑). `.gitignore` 대상이므로 [초기 설정](#초기-설정) 참고하여 생성 필요 |
 
@@ -780,18 +780,21 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 
 ### PipelineRun
 
-파이프라인 실행 이력. Admin에서 `Postings > Pipeline runs`에서 확인.
+크롤링(스크래핑) 실행 이력. Admin에서 `Postings > Pipeline runs`에서 확인. LLM 처리는 대시보드가 `RawPosting`을 건별로 돌리며 `PipelineRun`을 거치지 않으므로, 이 모델은 "어떤 파라미터로 무엇을 몇 건 긁었는지"를 기록한다.
 
 | 필드 | 설명 |
 |---|---|
 | `source` | `yakdap` / `pharm_recruit` (크롤링), 또는 `process` (`process_postings` 단독 실행) |
 | `started_at` | 실행 시작 시각 |
 | `finished_at` | 완료 시각 |
-| `total_scraped` | 스크래핑된 공고 수 |
-| `total_processed` | DB에 저장된 공고 수 |
-| `total_errors` | 에러 발생 공고 수 |
+| `total_scraped` | 스크래핑된(신규 저장된) 공고 수 |
+| `total_errors` | 실패한 공고 수. 크롤링 건별 수집 실패(`scrape`의 `on_error` 콜백)와 LLM 처리 실패를 모두 집계한다 |
 | `status` | `running` / `done` / `failed` |
 | `log_output` | 실행 중 누적되는 상세 로그. 대시보드 로그 패널에 거의 실시간으로 보이도록 한 줄마다 즉시 DB에 반영된다 |
+| `start_id` · `count` · `step` | yakdap 전용. `start_id`부터 `step` 간격으로 `count`개를 순회한 크롤링 파라미터 (재현·추적용) |
+| `big_categories` | pharm_recruit 전용 JSONField. 이번 회차에 수집한 지역 대분류 목록(복수) |
+
+크롤링 파라미터(`start_id`/`count`/`step`/`big_categories`)는 `pipeline/stages.scrape_param_fields(options)`가 옵션에서 추출해 run 생성 시 채운다. Admin 목록에는 `params_summary` 컬럼으로 한 줄 요약된다.
 
 ### DashboardSnapshot
 

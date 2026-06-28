@@ -145,10 +145,17 @@ class PipelineRun(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     total_scraped = models.IntegerField(default=0)
-    total_processed = models.IntegerField(default=0)
     total_errors = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running')
     log_output = models.TextField(blank=True)
+
+    # 어떤 파라미터로 크롤링했는지 기록 (재현·추적용).
+    # yakdap 전용: start_id부터 step 간격으로 count개 순회.
+    start_id = models.IntegerField(null=True, blank=True, verbose_name='시작 ID')
+    count = models.IntegerField(null=True, blank=True, verbose_name='수집 개수')
+    step = models.IntegerField(null=True, blank=True, verbose_name='스텝')
+    # pharm_recruit 전용: 선택한 지역 대분류 목록(복수).
+    big_categories = models.JSONField(default=list, blank=True, verbose_name='지역 대분류')
 
     class Meta:
         ordering = ['-started_at']

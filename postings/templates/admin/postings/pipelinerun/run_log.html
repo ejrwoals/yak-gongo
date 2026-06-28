@@ -21,9 +21,6 @@
     <strong>스크래핑</strong><br><span id="stat-scraped">{{ run.total_scraped }}</span>개
   </div>
   <div class="module" style="padding: 12px 20px; min-width: 140px;">
-    <strong>저장 완료</strong><br><span id="stat-processed">{{ run.total_processed }}</span>개
-  </div>
-  <div class="module" style="padding: 12px 20px; min-width: 140px;">
     <strong>에러</strong><br><span id="stat-errors">{{ run.total_errors }}</span>개
   </div>
   <div class="module" style="padding: 12px 20px; min-width: 200px;">
@@ -127,7 +124,6 @@
         statusBadge.style.color = statusColors[data.status] || '#333';
 
         document.getElementById('stat-scraped').textContent = data.total_scraped;
-        document.getElementById('stat-processed').textContent = data.total_processed;
         document.getElementById('stat-errors').textContent = data.total_errors;
         if (data.finished_at) {
           document.getElementById('stat-finished').textContent = data.finished_at;

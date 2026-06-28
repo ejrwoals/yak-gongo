@@ -14,7 +14,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from postings.models import PipelineRun
-from pipeline.stages import scrape_stage, process_stage
+from pipeline.stages import scrape_stage, process_stage, scrape_param_fields
 
 
 class Command(BaseCommand):
@@ -53,6 +53,7 @@ class Command(BaseCommand):
                 source=source,
                 status='running',
                 log_output='파이프라인 시작...\n',
+                **scrape_param_fields(options),
             )
 
         # 로그를 stdout + run.log_output에 기록.
@@ -62,7 +63,7 @@ class Command(BaseCommand):
         def _log(msg: str):
             self.stdout.write(msg)
             run.log_output += msg + '\n'
-            run.save(update_fields=['log_output', 'total_scraped', 'total_processed', 'total_errors'])
+            run.save(update_fields=['log_output', 'total_scraped', 'total_errors'])
 
         def _flush():
             if buffer:
