@@ -170,6 +170,7 @@ def scrape(
                     'pharmacy_name': name,
                     'body': body,
                     'city': address,
+                    'source_id': num_id,
                 }
                 if on_item is not None:
                     on_item(record)

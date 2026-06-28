@@ -59,6 +59,7 @@ def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None,
 
     saved = 0
     errors = 0
+    last_id = None
 
     def on_error(item_id, exc):
         """스크래핑 건별 실패를 run.total_errors에 집계한다."""
@@ -69,7 +70,7 @@ def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None,
             run.save(update_fields=['total_errors'])
 
     def on_item(record: dict):
-        nonlocal saved
+        nonlocal saved, last_id
         _, created = RawPosting.objects.update_or_create(
             url=record['url'],
             defaults={
@@ -84,11 +85,22 @@ def scrape_stage(source: str, options: dict, run: PipelineRun, login_event=None,
                 'run': run,
             },
         )
+        # 수집 성공한 공고 ID(yakdap)를 추적 — 가장 큰 값이 다음 크롤링의 이어받기 기준이 된다.
+        sid = record.get('source_id')
+        if sid is not None and (last_id is None or sid > last_id):
+            last_id = sid
         if created:
             saved += 1
-            if run is not None:
+        if run is not None:
+            update_fields = []
+            if created:
                 run.total_scraped = saved
-                run.save(update_fields=['total_scraped'])
+                update_fields.append('total_scraped')
+            if last_id is not None:
+                run.last_scraped_id = last_id
+                update_fields.append('last_scraped_id')
+            if update_fields:
+                run.save(update_fields=update_fields)
 
     if source == 'yakdap':
         from scraper.yakdap import scrape

@@ -154,6 +154,9 @@ class PipelineRun(models.Model):
     start_id = models.IntegerField(null=True, blank=True, verbose_name='시작 ID')
     count = models.IntegerField(null=True, blank=True, verbose_name='수집 개수')
     step = models.IntegerField(null=True, blank=True, verbose_name='스텝')
+    # 실제로 마지막까지 수집 성공한 공고 ID(yakdap). 크래시로 중간에 멈춰도
+    # 이 값 다음부터 이어서 크롤링하면 빠짐없이 진행된다.
+    last_scraped_id = models.IntegerField(null=True, blank=True, verbose_name='마지막 성공 ID')
     # pharm_recruit 전용: 선택한 지역 대분류 목록(복수).
     big_categories = models.JSONField(default=list, blank=True, verbose_name='지역 대분류')
 

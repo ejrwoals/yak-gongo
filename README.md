@@ -628,7 +628,7 @@ result = process_posting(body="...", client=client, model_name=settings.LLM_MODE
 | `pharm_recruit.py` | `scrape(big_category, year=None, ..., on_item=None)` → `list[dict]`, 자동 페이지네이션, 도시별 수집 한도(`category_limit`) 지원. 팜리크루트는 월/일만 표시되므로 등록일 연도는 `year`(`None`이면 현재 연도)로 보정한다. 중복 URL 스킵 시에도 로그를 남겨 재크롤링 진행 상황이 끊겨 보이지 않는다 |
 | `pharm_recruit_urls.json` | `CITY_URL_DICT` 데이터 (big_category → city → URL 매핑). `.gitignore` 대상이므로 [초기 설정](#초기-설정) 참고하여 생성 필요 |
 
-반환 dict의 키: `url`, `platform`, `created_at`, `title`, `pharmacy_name`, `body`, `city`, `big_category`
+반환 dict의 키: `url`, `platform`, `created_at`, `title`, `pharmacy_name`, `body`, `city`, `big_category`. yakdap 레코드는 추가로 `source_id`(공고 숫자 ID)를 담아, 크롤링 진행 중 `PipelineRun.last_scraped_id` 갱신과 다음 회차 시작 ID 이어받기에 쓰인다.
 
 `on_item` 콜백을 전달하면 공고 1건을 수집할 때마다 그 dict로 호출되어, 전체 리스트 반환을 기다리지 않고 건별 중간 저장(스테이징 단계의 `RawPosting` 저장)을 할 수 있다.
 
@@ -792,9 +792,12 @@ Task 5: 복리후생 추출 (급여 명시 공고만)
 | `status` | `running` / `done` / `failed` |
 | `log_output` | 실행 중 누적되는 상세 로그. 대시보드 로그 패널에 거의 실시간으로 보이도록 한 줄마다 즉시 DB에 반영된다 |
 | `start_id` · `count` · `step` | yakdap 전용. `start_id`부터 `step` 간격으로 `count`개를 순회한 크롤링 파라미터 (재현·추적용) |
+| `last_scraped_id` | yakdap 전용. 이번 회차에서 **실제로 수집에 성공한 가장 큰 공고 ID**. 스크래퍼가 건별 콜백으로 넘기는 `source_id`(공고 숫자 ID)의 최댓값을 크롤링 중 계속 갱신해 저장하므로, 도중에 크래시로 멈춰도 어디까지 긁었는지 남는다. 다음 크롤링의 시작 ID 이어받기 기준이 된다 |
 | `big_categories` | pharm_recruit 전용 JSONField. 이번 회차에 수집한 지역 대분류 목록(복수) |
 
-크롤링 파라미터(`start_id`/`count`/`step`/`big_categories`)는 `pipeline/stages.scrape_param_fields(options)`가 옵션에서 추출해 run 생성 시 채운다. Admin 목록에는 `params_summary` 컬럼으로 한 줄 요약된다.
+크롤링 파라미터(`start_id`/`count`/`step`/`big_categories`)는 `pipeline/stages.scrape_param_fields(options)`가 옵션에서 추출해 run 생성 시 채운다. `last_scraped_id`는 파라미터가 아니라 크롤링 진행 중 `scrape_stage`의 `on_item`이 갱신한다. Admin 목록에는 `params_summary` 컬럼으로 한 줄 요약되며, yakdap 회차는 끝에 `(마지막 성공 {last_scraped_id})`가 덧붙는다.
+
+**크롤링 시작 ID 이어받기**: 리뷰 대시보드의 pre-1단계 크롤링 폼(`prestage_scrape_form_view`)은 yakdap 시작 ID 기본값을 **가장 최근 yakdap 회차의 `last_scraped_id + step`**으로 채운다. `start_id + count*step` 같은 추정이 아니라 실제로 성공한 마지막 ID 기준이라, 직전 실행이 도중에 크래시했어도 빠짐없이 이어진다. 가장 최근 회차만 보므로 과거에 한 번 건드린 동떨어진 ID(아웃라이어)에 휩쓸리지 않고 현재 진행 구간을 잇는다. `count`·`step`도 그 회차에서 이어받으며, `last_scraped_id`가 없으면(한 건도 못 긁고 끝난 회차) 그 회차의 `start_id`부터 다시 시도한다. 지역 대분류 기본값은 마지막 pharm_recruit 회차 선택을 따른다.
 
 ### DashboardSnapshot
 

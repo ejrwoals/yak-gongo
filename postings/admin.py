@@ -357,8 +357,10 @@ class JobPostingAdmin(admin.ModelAdmin):
     def prestage_scrape_form_view(self, request):
         """AJAX GET: pre-1단계 크롤링 실행 폼 fragment.
 
-        시작 ID는 마지막 yakdap 실행에서 이어받는다: 직전 실행이 훑은 마지막 ID
-        다음(start_id + count*step)을 기본값으로 채워, 다음 크롤링이 자연스럽게 이어진다.
+        시작 ID는 '가장 최근 yakdap 실행이 실제로 마지막까지 수집 성공한 공고 ID' 다음부터
+        이어받는다(last_scraped_id + step). count*step 추정이 아니라 실측이라, 도중에
+        크래시로 멈췄어도 빠짐없이 이어진다. '가장 최근 실행' 기준이므로 과거에 한 번
+        건드린 동떨어진 ID(아웃라이어)에 휩쓸리지 않고 현재 진행 중인 구간을 계속한다.
         지역 대분류도 마지막 pharm_recruit 실행에서 선택했던 값을 기본값으로 쓴다.
         """
         already_running = PipelineRun.objects.filter(status='running').first()
@@ -374,8 +376,12 @@ class JobPostingAdmin(admin.ModelAdmin):
         if last_yakdap:
             count = last_yakdap.count or count
             step = last_yakdap.step or step
-            # 직전 실행이 훑은 범위 다음 ID부터 이어서 시작
-            start_id = last_yakdap.start_id + count * step
+            if last_yakdap.last_scraped_id is not None:
+                # 실제로 성공한 마지막 ID 다음부터 — 크래시로 중간에 멈췄어도 빠짐없이 이어진다
+                start_id = last_yakdap.last_scraped_id + step
+            else:
+                # 한 건도 저장하지 못하고 끝났으면 그 시작점부터 다시 시도
+                start_id = last_yakdap.start_id
 
         last_pharm = (
             PipelineRun.objects.filter(source='pharm_recruit')
@@ -734,11 +740,14 @@ class PipelineRunAdmin(admin.ModelAdmin):
 
     @admin.display(description='파라미터')
     def params_summary(self, obj):
-        """어떤 파라미터로 돌렸는지 한 줄 요약."""
+        """어떤 파라미터로 돌렸는지 + 실제로 성공한 마지막 ID를 한 줄 요약."""
         if obj.source == 'yakdap':
             if obj.start_id is None:
                 return '-'
-            return f'ID {obj.start_id}부터 {obj.count}개 / step {obj.step}'
+            summary = f'ID {obj.start_id}부터 {obj.count}개 / step {obj.step}'
+            if obj.last_scraped_id is not None:
+                summary += f' (마지막 성공 {obj.last_scraped_id})'
+            return summary
         if obj.big_categories:
             return ', '.join(obj.big_categories)
         return '-'
