@@ -11,6 +11,7 @@
   </div>
   {% endif %}
 
+  <div class="ps-layout">
   <form id="scrape-form" class="prestage-form">
     <div class="ps-row">
       <label class="ps-label">소스</label>
@@ -50,4 +51,43 @@
 
     <button type="submit" class="ps-run-btn" {% if already_running %}disabled{% endif %}>크롤링 시작</button>
   </form>
+
+  <aside class="ps-history">
+    {# yakdap 이력 — 소스 토글에 맞춰 표시 #}
+    <div id="ps-hist-yakdap">
+      <div class="ps-hist-title">최근 약문약답 크롤링</div>
+      {% for run in yakdap_history %}
+      <div class="ps-hist-card status-{{ run.status }}">
+        <div class="ps-hist-top">
+          <span class="ps-hist-date">{{ run.started_at|date:"m-d H:i" }}</span>
+          <span class="ps-hist-badge">{{ run.get_status_display }}</span>
+        </div>
+        <div class="ps-hist-meta">
+          ID {{ run.start_id|default:"?" }}~{{ run.last_scraped_id|default:"?" }} · 개수 {{ run.count|default:"?" }} · 스텝 {{ run.step|default:"?" }}
+        </div>
+        <div class="ps-hist-meta">수집 {{ run.total_scraped }}건 · 에러 {{ run.total_errors }}건</div>
+      </div>
+      {% empty %}
+      <div class="ps-hist-empty">이력 없음</div>
+      {% endfor %}
+    </div>
+
+    {# pharm_recruit 이력 — 기본 숨김, 소스 선택 시 표시 #}
+    <div id="ps-hist-pharm" style="display:none;">
+      <div class="ps-hist-title">최근 팜리크루트 크롤링</div>
+      {% for run in pharm_history %}
+      <div class="ps-hist-card status-{{ run.status }}">
+        <div class="ps-hist-top">
+          <span class="ps-hist-date">{{ run.started_at|date:"m-d H:i" }}</span>
+          <span class="ps-hist-badge">{{ run.get_status_display }}</span>
+        </div>
+        <div class="ps-hist-meta">지역 {{ run.big_categories|join:", "|default:"?" }}</div>
+        <div class="ps-hist-meta">수집 {{ run.total_scraped }}건 · 에러 {{ run.total_errors }}건</div>
+      </div>
+      {% empty %}
+      <div class="ps-hist-empty">이력 없음</div>
+      {% endfor %}
+    </div>
+  </aside>
+  </div>
 </div>

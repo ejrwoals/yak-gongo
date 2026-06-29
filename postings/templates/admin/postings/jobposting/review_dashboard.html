@@ -129,6 +129,29 @@
     margin-bottom: 10px; padding: 7px 12px; background: #fff3cd; border-left: 3px solid #ffc107;
     border-radius: 0 4px 4px 0; font-size: 13px;
   }
+  /* 폼 + 직전 크롤링 이력 좌우 배치 */
+  .ps-layout { display: flex; gap: 22px; align-items: flex-start; }
+  .ps-layout .prestage-form { flex: 1; min-width: 0; }
+  .ps-history {
+    flex: 0 0 240px; border-left: 1px solid #e0d9f0; padding-left: 18px;
+  }
+  .ps-hist-title { font-weight: bold; font-size: 12.5px; color: #4a3b86; margin-bottom: 8px; }
+  .ps-hist-card {
+    background: #fff; border: 1px solid #e8e2f4; border-left: 3px solid #b9a6dd;
+    border-radius: 0 4px 4px 0; padding: 7px 10px; margin-bottom: 8px; font-size: 12px;
+  }
+  .ps-hist-card.status-done { border-left-color: #28a745; }
+  .ps-hist-card.status-failed { border-left-color: #d9480f; }
+  .ps-hist-card.status-running { border-left-color: #6f42c1; }
+  .ps-hist-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .ps-hist-date { font-weight: 600; color: #444; font-variant-numeric: tabular-nums; }
+  .ps-hist-badge { font-size: 11px; color: #888; }
+  .ps-hist-meta { color: #666; line-height: 1.5; font-variant-numeric: tabular-nums; }
+  .ps-hist-empty { font-size: 12px; color: #aaa; padding: 6px 0; }
+  @media (max-width: 900px) {
+    .ps-layout { flex-direction: column; }
+    .ps-history { flex-basis: auto; border-left: none; border-top: 1px solid #e0d9f0; padding-left: 0; padding-top: 14px; width: 100%; }
+  }
   .prestage-form .ps-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .ps-label { min-width: 110px; font-weight: bold; font-size: 13px; color: #555; }
   .ps-help { font-size: 12px; color: #888; }
@@ -974,12 +997,17 @@
     const yak = form.querySelector('#ps-yakdap');
     const pharm = form.querySelector('#ps-pharm');
     const headless = form.querySelector('#id_headless');
+    // 이력 패널은 form 바깥(.ps-layout)에 있으므로 document 기준으로 찾는다.
+    const histYak = document.getElementById('ps-hist-yakdap');
+    const histPharm = document.getElementById('ps-hist-pharm');
 
     function toggle() {
       let sel = '';
       radios.forEach(r => { if (r.checked) sel = r.value; });
       if (yak) yak.style.display = sel === 'yakdap' ? '' : 'none';
       if (pharm) pharm.style.display = sel === 'pharm_recruit' ? '' : 'none';
+      if (histYak) histYak.style.display = sel === 'yakdap' ? '' : 'none';
+      if (histPharm) histPharm.style.display = sel === 'pharm_recruit' ? '' : 'none';
       if (headless) {
         if (sel === 'yakdap') { headless.checked = false; headless.disabled = true; }
         else { headless.disabled = false; }

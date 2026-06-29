@@ -410,7 +410,13 @@ class JobPostingAdmin(admin.ModelAdmin):
             'start_id': start_id, 'count': count, 'step': step,
             'big_categories': big_categories, 'headless': True,
         })
-        ctx = {'form': form, 'already_running': already_running}
+        ctx = {
+            'form': form,
+            'already_running': already_running,
+            # 소스별 직전 크롤링 내역(참고용). 폼이 소스에 따라 토글되므로 둘 다 내려보낸다.
+            'yakdap_history': PipelineRun.objects.filter(source='yakdap').order_by('-started_at')[:3],
+            'pharm_history': PipelineRun.objects.filter(source='pharm_recruit').order_by('-started_at')[:3],
+        }
         if already_running:
             ctx['running_status_url'] = reverse('admin:pipelinerun_status', args=[already_running.id])
             ctx['running_confirm_url'] = reverse('admin:pipelinerun_confirm_login', args=[already_running.id])
