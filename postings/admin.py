@@ -160,6 +160,8 @@ class JobPostingAdmin(admin.ModelAdmin):
                  name='jobposting_prestage_scrape_start'),
             path('review/prestage/pending/', self.admin_site.admin_view(self.prestage_pending_view),
                  name='jobposting_prestage_pending'),
+            path('review/prestage/pending-histogram/', self.admin_site.admin_view(self.prestage_pending_histogram_view),
+                 name='jobposting_prestage_pending_histogram'),
             path('review/prestage/process-one/', self.admin_site.admin_view(self.prestage_process_one_view),
                  name='jobposting_prestage_process_one'),
             path('review/token-usage/', self.admin_site.admin_view(self.token_usage_view),
@@ -465,12 +467,12 @@ class JobPostingAdmin(admin.ModelAdmin):
     def prestage_pending_view(self, request):
         """AJAX GET: pre-2단계 — LLM 처리 대기(RawPosting pending) 목록 fragment."""
         valid = {f for f, _ in self.PENDING_SORT_FIELDS}
-        sort = request.GET.get('sort', 'scraped_at')
+        sort = request.GET.get('sort', 'created_at')
         if sort not in valid:
-            sort = 'scraped_at'
-        sort_dir = request.GET.get('sort_dir', 'asc')
+            sort = 'created_at'
+        sort_dir = request.GET.get('sort_dir', 'desc')
         if sort_dir not in ('asc', 'desc'):
-            sort_dir = 'asc'
+            sort_dir = 'desc'
         order = ('-' if sort_dir == 'desc' else '') + sort
 
         qs = RawPosting.objects.filter(status=RawPosting.STATUS_PENDING).order_by(order, 'id')
@@ -494,6 +496,40 @@ class JobPostingAdmin(admin.ModelAdmin):
             'sort_options': sort_options,
             'sort_dir': sort_dir,
         })
+
+    def prestage_pending_histogram_view(self, request):
+        """AJAX GET: 처리 대기(RawPosting pending)를 공고 날짜(created_at)별로 집계.
+
+        모달의 히스토그램에서 쓰는 [{date, count}] 목록과, 날짜 미상 건수를 반환한다.
+        """
+        import datetime
+
+        from django.db.models import Count
+
+        qs = (RawPosting.objects
+              .filter(status=RawPosting.STATUS_PENDING)
+              .values('created_at')
+              .annotate(count=Count('id'))
+              .order_by('created_at'))
+        counts = {}
+        null_count = 0
+        for row in qs:
+            d = row['created_at']
+            if d is None:
+                null_count = row['count']
+            else:
+                counts[d] = row['count']
+
+        # 최소~최대 날짜 사이를 하루 단위로 이어 붙여 공고 0건인 날짜도 포함한다.
+        buckets = []
+        if counts:
+            cur, end = min(counts), max(counts)
+            one_day = datetime.timedelta(days=1)
+            while cur <= end:
+                buckets.append({'date': cur.strftime('%Y-%m-%d'), 'count': counts.get(cur, 0)})
+                cur += one_day
+        total = sum(counts.values()) + null_count
+        return JsonResponse({'buckets': buckets, 'null_count': null_count, 'total': total})
 
     def prestage_process_one_view(self, request):
         """AJAX POST: pending RawPosting 한 건을 LLM 처리하여 JobPosting 생성.

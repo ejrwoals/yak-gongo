@@ -83,6 +83,20 @@
   </div>
 </div>
 
+<!-- 처리 대기 공고 날짜별 분포 모달 -->
+<div id="histogram-modal" class="verify-modal" style="display:none;">
+  <div class="verify-modal-box">
+    <div class="verify-modal-header">
+      <strong>📊 처리 대기 — 공고 날짜별 분포</strong>
+      <div class="verify-modal-actions">
+        <button id="histogram-close-btn" class="verify-btn-close">닫기</button>
+      </div>
+    </div>
+    <div id="histogram-summary" class="verify-summary"></div>
+    <div id="histogram-body" class="histogram-body"></div>
+  </div>
+</div>
+
 <!-- AI agent 대화형 검토 모달 (공용 부분템플릿) -->
 {% include "admin/postings/jobposting/agent_chat.html" %}
 
@@ -181,6 +195,11 @@
     border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold;
   }
   .ps-sort-toggle:hover { background: #eee; }
+  .ps-hist-btn {
+    padding: 4px 12px; border: 1px solid #6f42c1; background: #fff; color: #6f42c1;
+    border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: 500;
+  }
+  .ps-hist-btn:hover { background: #f2edfb; }
   .ps-link-btn {
     display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;
     font-size: 11.5px; color: #495057; text-decoration: none; white-space: nowrap;
@@ -263,6 +282,37 @@
   .verify-summary .vs-error { color: #d9480f; }
   .verify-summary .vs-failed { color: #868e96; }
   .verify-summary .vs-skipped { color: #adb5bd; }
+
+  /* 날짜별 분포 히스토그램 모달 */
+  #histogram-modal .verify-modal-box { width: min(1240px, 96vw); }
+  .histogram-body { overflow: hidden; padding: 18px; }
+  .hist-plot-wrap { display: flex; align-items: flex-start; }
+  /* 왼쪽 고정 y축 (가로 스크롤과 무관하게 항상 보인다) */
+  .hist-yaxis { flex: 0 0 42px; position: relative; height: 320px; border-right: 1px solid #ccc; }
+  .hist-ytick {
+    position: absolute; right: 6px; transform: translateY(-50%);
+    font-size: 10px; color: #999; white-space: nowrap;
+  }
+  .hist-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; }
+  /* 막대가 모달 너비를 채우도록 flex로 늘리고, 좁아지면 min-width에서 가로 스크롤 */
+  .histogram-chart { display: flex; align-items: flex-start; gap: 1px; position: relative; }
+  .hist-gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed #eee; z-index: 0; }
+  /* 막대 트랙(고정 320px)과 날짜 라벨을 쌓아 모든 막대 하단을 정렬한다. */
+  .hist-bar {
+    flex: 1 1 0; min-width: 3px; display: flex; flex-direction: column;
+    align-items: center; position: relative; z-index: 1;
+  }
+  .hist-bar .hist-track { height: 320px; width: 100%; display: flex; align-items: flex-end; }
+  .hist-bar .hist-fill {
+    width: 100%; background: linear-gradient(180deg, #9461e0, #6f42c1);
+    border-radius: 3px 3px 0 0; transition: opacity 0.15s;
+  }
+  .hist-bar:hover .hist-fill { opacity: 0.75; }
+  .hist-bar .hist-label {
+    height: 78px; margin-top: 6px; font-size: 9.5px; color: #888; white-space: nowrap;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+  }
+  .histogram-empty { padding: 40px; text-align: center; color: #888; }
 
   .verify-log { overflow-y: auto; padding: 6px 0; }
   .verify-log-row {
@@ -965,7 +1015,7 @@
     });
   });
 
-  const pendingSort = { field: 'scraped_at', dir: 'asc' };
+  const pendingSort = { field: 'created_at', dir: 'desc' };
   let pendingPage = 1;
 
   function loadPrestage(kind) {
@@ -1137,6 +1187,10 @@
         loadPrestage('process');
       }));
 
+    // 날짜별 분포 모달
+    const histBtn = document.getElementById('pending-histogram-btn');
+    if (histBtn) histBtn.addEventListener('click', showHistogram);
+
     const btn = document.getElementById('process-selected-btn');
     if (!btn) return;  // 대기 0건
     btn.disabled = false;
@@ -1163,6 +1217,80 @@
       });
       runProcess(items);
     });
+  }
+
+  // 처리 대기 공고 날짜별 분포 모달
+  const histogramModal = document.getElementById('histogram-modal');
+  document.getElementById('histogram-close-btn').addEventListener('click', function() {
+    histogramModal.style.display = 'none';
+  });
+  histogramModal.addEventListener('click', function(e) {
+    if (e.target === histogramModal) histogramModal.style.display = 'none';
+  });
+
+  // 최대값을 담는 보기 좋은 눈금 간격(…1·2·5·10…)을 고른다. 약 5칸 목표.
+  function histNiceStep(maxVal) {
+    const raw = Math.max(1, maxVal) / 5;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const n = raw / pow;
+    const nice = n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10;
+    return nice * pow;
+  }
+
+  function showHistogram() {
+    const summary = document.getElementById('histogram-summary');
+    const body = document.getElementById('histogram-body');
+    summary.textContent = '';
+    body.innerHTML = '<div class="histogram-empty">불러오는 중…</div>';
+    histogramModal.style.display = 'flex';
+
+    fetch('prestage/pending-histogram/')
+      .then(r => r.json())
+      .then(d => {
+        const buckets = d.buckets || [];
+        summary.innerHTML =
+          `<span class="vs-count">총 ${d.total.toLocaleString()}건</span>` +
+          `<span>기간: ${buckets.length ? buckets[0].date + ' ~ ' + buckets[buckets.length - 1].date : '-'}</span>` +
+          (d.null_count ? `<span style="color:#adb5bd;">날짜 미상 ${d.null_count}건</span>` : '');
+        if (!buckets.length) {
+          body.innerHTML = '<div class="histogram-empty">표시할 공고가 없습니다.</div>';
+          return;
+        }
+        const PLOT_H = 320;
+        const max = Math.max(...buckets.map(b => b.count));
+        // y축 눈금을 보기 좋은 간격(1·2·5 계열)으로 계산
+        const tickStep = histNiceStep(max);
+        const niceMax = Math.max(tickStep, Math.ceil(max / tickStep) * tickStep);
+        const yticks = [];
+        for (let v = 0; v <= niceMax + 1e-9; v += tickStep) yticks.push(v);
+        const yOf = v => PLOT_H * (1 - v / niceMax);
+
+        const yaxisHtml = yticks.map(v =>
+          '<span class="hist-ytick" style="top:' + yOf(v) + 'px;">' + v + '</span>').join('');
+        const gridHtml = yticks.map(v =>
+          '<div class="hist-gridline" style="top:' + yOf(v) + 'px;"></div>').join('');
+        const bars = buckets.map((b) => {
+          const h = b.count ? Math.max(2, Math.round((b.count / niceMax) * PLOT_H)) : 0;
+          return '<div class="hist-bar" data-date="' + b.date + '" data-count="' + b.count +
+            '" title="' + b.date + ': ' + b.count + '건">' +
+            '<div class="hist-track"><div class="hist-fill" style="height:' + h + 'px;"></div></div>' +
+            '<span class="hist-label"></span>' +
+            '</div>';
+        }).join('');
+        body.innerHTML =
+          '<div class="hist-plot-wrap">' +
+            '<div class="hist-yaxis">' + yaxisHtml + '</div>' +
+            '<div class="hist-scroll"><div class="histogram-chart">' + gridHtml + bars + '</div></div>' +
+          '</div>';
+
+        // 렌더된 실제 너비를 재서 약 55px마다 라벨 하나가 오도록 간격을 계산한다.
+        const chart = body.querySelector('.histogram-chart');
+        const step = Math.max(1, Math.round(buckets.length * 55 / (chart.scrollWidth || 1)));
+        chart.querySelectorAll('.hist-bar').forEach((el, i) => {
+          if (i % step === 0) el.querySelector('.hist-label').textContent = el.dataset.date;
+        });
+      })
+      .catch(() => { body.innerHTML = '<div class="histogram-empty" style="color:#dc3545;">불러오기 실패</div>'; });
   }
 
   // 진행 모달을 재사용한 건별 LLM 처리 실행
