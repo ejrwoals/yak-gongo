@@ -1,0 +1,10 @@
+{% if SUPABASE_URL %}
+<style>
+  #profile-banner:hover { background:#EFF5EE; }
+  #profile-name { max-width:130px; overflow:hidden; text-overflow:ellipsis; }
+</style>
+<div id="profile-banner" style="margin-left:auto; display:flex; align-items:center; gap:9px; cursor:pointer; padding:4px 12px 4px 4px; border-radius:999px; transition:background .15s;">
+  <div id="profile-avatar" style="width:36px; height:36px; border-radius:50%; background:linear-gradient(150deg,#CFE9DA,#A6D8BE); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:#0F7A4C; flex:none;"></div>
+  <span id="profile-name" style="font-size:14px; font-weight:700; color:#3A4038; white-space:nowrap;">…</span>
+</div>
+{% endif %}

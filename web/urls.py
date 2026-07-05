@@ -5,6 +5,9 @@ from . import views
 app_name = 'web'
 
 urlpatterns = [
+    path('login/', views.login_view, name='login'),
+    path('logout/', views.logout_view, name='logout'),
+    path('healthz', views.healthz, name='healthz'),
     path('', views.home, name='home'),
     path('compare/', views.compare, name='compare'),
     path('compare/result/', views.compare_result, name='compare_result'),

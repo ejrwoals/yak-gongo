@@ -1,0 +1,8 @@
+{% load static %}{% if SUPABASE_URL %}
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  window.SUPABASE_URL = "{{ SUPABASE_URL }}";
+  window.SUPABASE_ANON_KEY = "{{ SUPABASE_ANON_KEY }}";
+</script>
+<script src="{% static 'web/js/auth.js' %}"></script>
+{% endif %}

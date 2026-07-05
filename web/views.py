@@ -1,19 +1,32 @@
+from django.http import HttpResponse
 from django.shortcuts import render
-from django.utils import timezone
 
-from postings.models import DashboardSnapshot
+from web.snapshot import get_latest_snapshot
 
 
-def _latest_snapshot():
-    return DashboardSnapshot.objects.order_by('-created_at').first()
+def login_view(request):
+    """Supabase Google 로그인 화면 (클라이언트 JS가 OAuth를 처리)."""
+    return render(request, 'web/login.html')
+
+
+def logout_view(request):
+    """세션 쿠키를 지우고 클라이언트에서 Supabase signOut 후 로그인으로."""
+    resp = render(request, 'web/logout.html')
+    resp.delete_cookie('sb-access-token', path='/')
+    return resp
+
+
+def healthz(request):
+    """인증 없이 접근 가능한 헬스체크."""
+    return HttpResponse('ok')
 
 
 def _page(request, template, section):
     """최신 스냅샷에서 한 섹션(home/fulltime)을 떼어 템플릿에 전달."""
-    snap = _latest_snapshot()
+    snap = get_latest_snapshot()
     payload = {
-        'data': (snap.data.get(section) if snap else None),
-        'lastUpdate': (timezone.localtime(snap.created_at).strftime('%Y-%m-%d') if snap else None),
+        'data': (snap['data'].get(section) if snap else None),
+        'lastUpdate': (snap['last_update'] if snap else None),
     }
     return render(request, template, {'dashboard': payload})
 
@@ -32,10 +45,10 @@ def compare_result(request):
 
 def method(request):
     """데이터 처리 방법(시급 산출·수집 파이프라인) 안내 페이지."""
-    snap = _latest_snapshot()
+    snap = get_latest_snapshot()
     return render(request, 'web/method.html', {
-        'postingCount': (snap.posting_count if snap else None),
-        'lastUpdate': (timezone.localtime(snap.created_at).strftime('%Y-%m-%d') if snap else None),
+        'postingCount': (snap['posting_count'] if snap else None),
+        'lastUpdate': (snap['last_update'] if snap else None),
     })
 
 

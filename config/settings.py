@@ -69,6 +69,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'web.context_processors.supabase',
             ],
         },
     },
@@ -127,6 +128,17 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# 공개 페이지 대시보드 스냅샷 소스
+# 로컬(기본): DB의 DashboardSnapshot에서 읽는다.
+# 배포본: settings_prod가 True로 덮어써 web/snapshot/latest.json에서 읽는다.
+SNAPSHOT_FROM_FILE = os.environ.get('SNAPSHOT_FROM_FILE', 'False') == 'True'
+SNAPSHOT_FILE_PATH = BASE_DIR / 'web' / 'snapshot' / 'latest.json'
+
+# Supabase 인증 (공개 배포본에서만 사용). 로컬은 비워두어 인증 비활성.
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
+SUPABASE_JWT_SECRET = os.environ.get('SUPABASE_JWT_SECRET', '')
 
 # LLM
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', '')

@@ -1,0 +1,36 @@
+# .gcloudignore 와 동일 규칙 — 로컬 docker build 가 Cloud Build 와 같은 이미지를 만들도록.
+.git/
+.venv/
+.claude/
+__pycache__/
+*.py[cod]
+
+# 로컬 전용 데이터·DB
+data/
+*.sqlite3
+*.csv
+*.pkl
+*.parquet
+*.png
+*.jpg
+*.jpeg
+
+# 관리자 전용 코드 (배포본은 web 앱만 서빙)
+postings/
+scraper/
+pipeline/
+geo/
+notion-stats/
+legacy-files/
+handoff-web/
+docs/
+
+# 로컬 산출물·시크릿
+staticfiles/
+*.log
+.env
+.env.*
+!.env.example
+*.md
+
+# 주의: web/snapshot/latest.json 은 배포 아티팩트이므로 제외하지 않는다.

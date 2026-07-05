@@ -1,0 +1,135 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>얼마줄약</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+  <style>
+    /* 개국공신 로그인 UI 구조를 그대로 옮김 (Tailwind → 동일 값 CSS) */
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;   /* min-h-screen flex items-center justify-center */
+      padding: 32px;                                                 /* p-8 */
+      background: #f9fafb;                                           /* bg-gray-50 */
+      font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .card {
+      display: flex; flex-direction: column; align-items: center;    /* flex flex-col items-center */
+      gap: 40px;                                                     /* gap-10 */
+      width: 100%; max-width: 448px;                                 /* w-full max-w-md */
+    }
+    .brand { text-align: center; }
+    .brand h1 {
+      margin: 0 0 12px;                                              /* mb-3 */
+      font-size: 36px; line-height: 1.1; font-weight: 700;          /* text-4xl font-bold */
+      color: #0D0D0D;                                                /* text-app-dark */
+      letter-spacing: -0.025em;                                      /* tracking-tight */
+    }
+    .brand p { margin: 0; font-size: 16px; color: #6b7280; }        /* text-gray-500 */
+    .gbtn {
+      display: flex; align-items: center; justify-content: center; gap: 12px;  /* flex items-center justify-center gap-3 */
+      width: 100%; padding: 16px 24px;                              /* w-full px-6 py-4 */
+      background: #fff; border: 1px solid #e5e7eb;                  /* bg-white border border-gray-200 */
+      border-radius: 16px;                                          /* rounded-2xl */
+      box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);                     /* shadow-sm */
+      cursor: pointer; transition: background-color .15s;           /* transition-colors */
+    }
+    .gbtn:hover { background: #f9fafb; }                            /* hover:bg-gray-50 */
+    .gbtn:disabled { opacity: .6; cursor: default; }               /* disabled:opacity-60 */
+    .gbtn span { font-size: 16px; font-weight: 500; color: #374151; } /* text-base font-medium text-gray-700 */
+    .gicon { width: 20px; height: 20px; }                          /* w-5 h-5 */
+    .err { font-size: 14px; color: #E64D40; }                      /* text-app-error text-sm */
+    .back {
+      display: flex; align-items: center; gap: 6px;                 /* flex items-center gap-1.5 */
+      font-size: 14px; color: #9ca3af; text-decoration: none;      /* text-sm text-gray-400 */
+      transition: color .15s;
+    }
+    .back:hover { color: #4b5563; }                                /* hover:text-gray-600 */
+    .back svg { width: 16px; height: 16px; }                       /* w-4 h-4 */
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <h1>얼마줄약</h1>
+      <p>약사 시급 리포트</p>
+    </div>
+
+    <button id="login-btn" class="gbtn">
+      <svg class="gicon" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+      </svg>
+      <span id="login-btn-text">Google로 시작</span>
+    </button>
+
+    <p id="login-error" class="err" style="display:none;"></p>
+
+    <a class="back" href="https://chajjaem.dev">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5" />
+        <path d="M12 19l-7-7 7-7" />
+      </svg>
+      chajjaem.dev로 돌아가기
+    </a>
+  </div>
+
+  {% if SUPABASE_URL %}
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const sb = supabase.createClient("{{ SUPABASE_URL }}", "{{ SUPABASE_ANON_KEY }}");
+    const nextUrl = new URLSearchParams(location.search).get('next') || '/';
+    const btn = document.getElementById('login-btn');
+    const btnText = document.getElementById('login-btn-text');
+    const errEl = document.getElementById('login-error');
+
+    function persist(session) {
+      if (!session) return false;
+      document.cookie = "sb-access-token=" + session.access_token +
+        "; path=/; max-age=" + (session.expires_in || 3600) + "; samesite=lax; secure";
+      return true;
+    }
+    function setLoading(on) {
+      btn.disabled = on;
+      btnText.textContent = on ? '로그인 중...' : 'Google로 시작';
+    }
+
+    // OAuth 리다이렉트로 돌아왔거나 기존 세션이 있으면 쿠키 세팅 후 원래 목적지로
+    async function maybeRedirect() {
+      const { data } = await sb.auth.getSession();
+      if (persist(data.session)) location.replace(nextUrl);
+    }
+    sb.auth.onAuthStateChange((_e, session) => { if (persist(session)) location.replace(nextUrl); });
+    maybeRedirect();
+
+    btn.onclick = async () => {
+      errEl.style.display = 'none';
+      setLoading(true);
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: location.origin + '/login/?next=' + encodeURIComponent(nextUrl) },
+      });
+      if (error) {
+        setLoading(false);
+        errEl.textContent = '로그인에 실패했어요. 다시 시도해 주세요.';
+        errEl.style.display = '';
+      }
+    };
+  </script>
+  {% else %}
+  <script>
+    document.getElementById('login-btn').disabled = true;
+    var e = document.getElementById('login-error');
+    e.textContent = '인증이 아직 설정되지 않았습니다 (SUPABASE_URL 없음).';
+    e.style.display = '';
+  </script>
+  {% endif %}
+</body>
+</html>

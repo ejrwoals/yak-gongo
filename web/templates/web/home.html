@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>약사 시급 리포트</title>
+<title>얼마줄약</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
 <style>
@@ -32,7 +32,7 @@
           <div style="width:34px; height:34px; border-radius:10px; background:linear-gradient(150deg,#1BAA6B,#0F7A4C); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(15,122,76,0.26);">
             <span style="font-size:17px; font-weight:800; color:#fff; letter-spacing:-1px;">약</span>
           </div>
-          <span style="font-size:16px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">약사 시급 리포트</span>
+          <span style="font-size:16px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">얼마줄약</span>
         </div>
         <nav style="display:flex; align-items:center; gap:4px;">
           <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
@@ -41,12 +41,7 @@
           <a id="region-modal-open" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:600; color:#646B62; text-decoration:none; cursor:pointer;">지역 분류 기준</a>
         </nav>
       </div>
-      <div style="display:flex; align-items:center; gap:12px;">
-        <button aria-label="검색" style="width:38px; height:38px; border-radius:10px; border:1px solid #EAEAE3; background:#fff; display:flex; align-items:center; justify-content:center;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke-linecap="round"/></svg>
-        </button>
-        <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(150deg,#CFE9DA,#A6D8BE); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:#0F7A4C;">P</div>
-      </div>
+      {% include 'web/_profile_banner.html' %}
     </div>
   </header>
 
@@ -315,5 +310,6 @@
 <script src="{% static 'web/js/korea-regions.js' %}"></script>
 <script src="{% static 'web/js/region-map.js' %}"></script>
 <script src="{% static 'web/js/home.js' %}"></script>
+{% include 'web/_auth_scripts.html' %}
 </body>
 </html>

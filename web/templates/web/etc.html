@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>기타 파트 근무 — 약사 시급 리포트</title>
+<title>기타 파트 근무 — 얼마줄약</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
 <style>
@@ -26,6 +26,7 @@
         <span style="font-size:12px; font-weight:700; color:#2F7E48; background:#DEF0E4; padding:5px 11px; border-radius:999px; white-space:nowrap;">기타 파트 근무</span>
         <span style="font-size:14px; font-weight:700; color:#9AA098; white-space:nowrap;">시급 리포트</span>
       </div>
+    {% include 'web/_profile_banner.html' %}
     </div>
   </header>
 
@@ -210,5 +211,6 @@
 <script src="{% static 'web/js/charts.js' %}"></script>
 <script src="{% static 'web/js/ui.js' %}"></script>
 <script src="{% static 'web/js/etc.js' %}"></script>
+{% include 'web/_auth_scripts.html' %}
 </body>
 </html>

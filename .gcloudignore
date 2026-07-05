@@ -1,0 +1,43 @@
+# Cloud Build 업로드 제외 목록.
+# (.gcloudignore 가 존재하면 gcloud 는 .gitignore 를 무시하고 이 파일만 따른다)
+# 여기서 제외된 것은 컨테이너 이미지에 들어가지 않는다.
+
+# ── 버전관리 / 개발환경 ─────────────────────────────────────────
+.git/
+.venv/
+.claude/
+__pycache__/
+*.py[cod]
+
+# ── 로컬 전용 데이터·DB (공개 서버로 절대 올리지 않음) ──────────
+data/
+*.sqlite3
+*.csv
+*.pkl
+*.parquet
+*.png
+*.jpg
+*.jpeg
+
+# ── 관리자 전용 코드 (크롤러·파이프라인·LLM·기타 유틸) ──────────
+# 배포본은 web 앱만 서빙하므로 postings/scraper/pipeline 등은 불필요.
+postings/
+scraper/
+pipeline/
+geo/
+notion-stats/
+legacy-files/
+handoff-web/
+docs/
+
+# ── 로컬 개발 산출물·시크릿 ─────────────────────────────────────
+staticfiles/
+*.log
+.env
+.env.*
+!.env.example
+
+# ── 문서 ────────────────────────────────────────────────────────
+*.md
+
+# 주의: web/snapshot/latest.json 은 배포 아티팩트이므로 제외하지 않는다.

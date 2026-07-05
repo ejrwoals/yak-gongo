@@ -14,10 +14,15 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
+from django.conf import settings
 from django.urls import path, include
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('', include('web.urls')),
 ]
+
+# 관리자 앱이 설치된 로컬에서만 /admin/ 라우트를 노출한다.
+# (배포본은 settings_prod에서 admin 앱을 제외하므로 이 블록을 건너뛴다)
+if 'django.contrib.admin' in settings.INSTALLED_APPS:
+    from django.contrib import admin
+    urlpatterns.insert(0, path('admin/', admin.site.urls))

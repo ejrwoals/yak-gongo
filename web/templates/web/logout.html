@@ -1,0 +1,25 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그아웃</title>
+  <style>
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+      background:#f2f7f1; color:#64756c; font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+  </style>
+</head>
+<body>
+  <p>로그아웃 중…</p>
+  {% if SUPABASE_URL %}
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const sb = supabase.createClient("{{ SUPABASE_URL }}", "{{ SUPABASE_ANON_KEY }}");
+    document.cookie = "sb-access-token=; path=/; max-age=0";
+    sb.auth.signOut().finally(() => location.replace('/login/'));
+  </script>
+  {% else %}
+  <script>location.replace('/login/');</script>
+  {% endif %}
+</body>
+</html>

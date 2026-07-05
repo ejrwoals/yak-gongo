@@ -1,0 +1,7 @@
+# 공개 웹 배포본(Cloud Run) 전용 최소 의존성.
+# 크롤러·LLM·파이프라인(selenium/pandas/google-genai 등)은 포함하지 않는다.
+django>=6.0
+gunicorn>=21.0
+whitenoise>=6.0
+python-dotenv>=1.0
+PyJWT[crypto]>=2.8
