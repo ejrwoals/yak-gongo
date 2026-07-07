@@ -7,7 +7,7 @@
 - **개인 리뷰 워크플로우**: Django Admin에서 LLM 추출 결과를 확인·수정·체크
 - **통계 공유**: 공개 웹 프론트엔드 **얼마줄약**(`web` 앱)의 홈·근무 유형별 페이지에서 시급·지역·근무 유형별 통계를 외부에 공개
 
-**하이브리드 배포 구조**: 관리자 기능(크롤러·LLM 파이프라인·Django Admin)은 로컬에서 SQLite DB를 두고 돌리고, 공개 프론트엔드 **얼마줄약**은 DB 없이 번들된 스냅샷 JSON만 읽는 경량·무상태 앱으로 Google Cloud Run에 배포한다 ([배포 (Cloud Run)](#배포-cloud-run) 참고). 공개 배포본은 Supabase Google 로그인 게이트로 보호된다 ([인증 (Supabase 로그인)](#인증-supabase-로그인) 참고).
+**하이브리드 배포 구조**: 관리자 기능(크롤러·LLM 파이프라인·Django Admin)은 로컬에서 SQLite DB를 두고 돌리고, 공개 프론트엔드 **얼마줄약**은 DB 없이 번들된 스냅샷 JSON만 읽는 경량·무상태 앱으로 Google Cloud Run에 배포한다 ([배포 (Cloud Run)](#배포-cloud-run) 참고). 공개 배포본은 Supabase Google 로그인 + 초대코드 게이트로 보호된다 ([인증 (Supabase 로그인)](#인증-supabase-로그인) 참고).
 
 ---
 
@@ -91,7 +91,7 @@ yak-gongo/
 ├── web/                     # 외부 공개 웹 프론트엔드 앱 (얼마줄약)
 │   ├── views.py             # 스냅샷을 읽어 페이지별 섹션을 템플릿에 임베드 + login/logout/healthz 뷰
 │   ├── snapshot.py          # get_latest_snapshot() — 로컬은 DB, 배포본은 JSON 파일에서 읽는 로더 추상화
-│   ├── middleware.py        # SupabaseAuthMiddleware — Supabase JWT 로그인 게이트 (배포본 전용)
+│   ├── middleware.py        # SupabaseAuthMiddleware — Supabase JWT 로그인 + 초대코드 게이트 (배포본 전용)
 │   ├── context_processors.py # supabase — 템플릿에 SUPABASE_URL/ANON_KEY 공개 설정 주입
 │   ├── urls.py              # /login/ · /logout/ · /healthz · / · /compare/ · /compare/result/ · /method/ · /fulltime/ · /weekend/ · /etc/ · /onetime/
 │   ├── templates/web/       # home·compare·compare_result·method·fulltime·weekend·etc·onetime.html
@@ -109,6 +109,9 @@ yak-gongo/
 │
 ├── notion-stats/            # Notion 연동 통계 (차트 생성 + Notion 업로드)
 │   └── one_click_statistics.py  # 30종 이상 차트 생성 및 Notion 페이지 업데이트
+│
+├── supabase/                # 공개 배포본 인증용 Supabase 스키마 (SQL Editor에서 수동 실행)
+│   └── migrations/          # 001 users 부트스트랩 / 002 초대코드(invite_codes + claim_invite RPC) / 003 클레임 조회 뷰
 │
 ├── legacy-files/               # 일회성 스크립트 모음 (레거시)
 │   └── one-time-data-migration/
@@ -604,13 +607,13 @@ web/views: 스냅샷의 해당 섹션을 json_script로 템플릿에 임베드
 - **DB 없음**: `INSTALLED_APPS`에서 `postings`·`admin` 등 관리자 앱을 빼고 `web`(+`staticfiles`)만 남긴다. 따라서 pandas·selenium·google-genai 같은 무거운 의존성이 필요 없고, SQLite DB에도 접근하지 않는다. `/admin/` 라우트는 `config/urls.py`가 `admin` 앱 설치 여부를 보고 로컬에서만 노출한다.
 - **스냅샷 JSON에서 데이터 로드**: `SNAPSHOT_FROM_FILE=True`로 두어, 공개 페이지가 DB 대신 번들된 `web/snapshot/latest.json`을 읽는다 ([데이터 파이프라인 (스냅샷 방식)](#데이터-파이프라인-스냅샷-방식) 참고).
 - **정적 파일**: `whitenoise`가 압축·해시(캐시버스팅) 방식으로 직접 서빙한다 (`collectstatic`은 이미지 빌드 시 수행).
-- **Supabase 로그인 게이트**: `SupabaseAuthMiddleware`가 활성화된다 ([인증 (Supabase 로그인)](#인증-supabase-로그인) 참고).
+- **Supabase 로그인 + 초대코드 게이트**: `SupabaseAuthMiddleware`가 활성화된다 ([인증 (Supabase 로그인)](#인증-supabase-로그인) 참고).
 
 ### 배포본 전용 파일
 
 | 파일 | 역할 |
 |---|---|
-| `config/settings_prod.py` | 배포 설정 (위 항목). `ALLOWED_HOSTS`·`AUTH_GATE` 등은 env로 주입 |
+| `config/settings_prod.py` | 배포 설정 (위 항목). `ALLOWED_HOSTS`·`AUTH_GATE`·`INVITE_GATE` 등은 env로 주입 |
 | `requirements-web.txt` | 배포 전용 최소 의존성 (`django`/`gunicorn`/`whitenoise`/`python-dotenv`/`PyJWT[crypto]`) |
 | `Dockerfile` | `python:3.13-slim` 위에 `requirements-web.txt` 설치 → `collectstatic` → gunicorn 실행 (`$PORT`, 기본 8080) |
 | `.dockerignore` / `.gcloudignore` | 관리자 코드(`postings`/`scraper`/`pipeline`/`geo`/`notion-stats`/…)·로컬 DB·시크릿을 이미지에서 제외. `web/snapshot/latest.json`은 아티팩트라 **제외하지 않는다** |
@@ -637,14 +640,28 @@ web/views: 스냅샷의 해당 섹션을 json_script로 템플릿에 임베드
 
 ## 인증 (Supabase 로그인)
 
-공개 배포본에는 **Supabase Google 로그인 게이트**가 있다 (베타 기간 접근 제한용). 로컬 개발에서는 `SUPABASE_URL`이 비어 있어 게이트와 인증 스크립트가 모두 비활성 상태다.
+공개 배포본에는 **두 계층의 진입 게이트**가 있다 (베타 기간 접근 제한용): ① Supabase Google **로그인**(JWT), ② 로그인 뒤 **초대코드**(allow-list). 로컬 개발에서는 `SUPABASE_URL`이 비어 있어 게이트와 인증 스크립트가 모두 비활성 상태다.
 
 ### 동작 방식
 
-- **로그인 게이트 (서버)**: `web/middleware.py`의 `SupabaseAuthMiddleware`가 모든 요청에서 `sb-access-token` 쿠키의 JWT를 검증한다. 유효한 토큰이 있으면 통과, 없으면 `/login/?next=…`로 리다이렉트한다. `/login`·`/logout`·`/static/`·`/healthz`는 인증 없이 접근 가능하다. `settings.AUTH_GATE_ENABLED`(env `AUTH_GATE`)로 게이트 전체를 켜고 끈다 — 정식 오픈 시 `AUTH_GATE=0`으로 공개 전환한다.
+- **로그인 게이트 (서버, 1계층)**: `web/middleware.py`의 `SupabaseAuthMiddleware`가 모든 요청에서 `sb-access-token` 쿠키의 JWT를 검증한다. 유효한 토큰이 있으면 1차 통과, 없으면 `/login/?next=…`로 리다이렉트한다. `/login`·`/logout`·`/static/`·`/healthz`는 인증 없이 접근 가능하다. `settings.AUTH_GATE_ENABLED`(env `AUTH_GATE`)로 게이트 전체를 켜고 끈다 — 정식 오픈 시 `AUTH_GATE=0`으로 공개 전환한다.
 - **JWT 서명 검증**: 토큰 헤더의 `alg`를 보고 두 방식을 자동 지원한다 — 비대칭(ES256/RS256)은 Supabase 공개키(JWKS, `SUPABASE_URL`)로 검증하고, 대칭(HS256)은 Legacy JWT Secret(`SUPABASE_JWT_SECRET`)으로 검증하는 fallback이다. (약사 자격 role 검증은 아직 없다.)
-- **로그인 흐름 (클라이언트)**: `/login/`(`login.html`)에서 Supabase JS SDK가 Google OAuth를 처리한다. `web/static/web/js/auth.js`가 OAuth 콜백을 받아 세션을 세우고, access_token을 `sb-access-token` 쿠키에 동기화하며(서버 미들웨어가 읽음), 헤더의 **프로필 배너**(원형 Google 아바타 + 닉네임)를 채운다. `/logout/`은 세션 쿠키를 지우고 클라이언트에서 Supabase `signOut` 후 로그인으로 돌아간다.
+- **초대코드 게이트 (서버, 2계층)**: JWT가 유효해도, 같은 미들웨어가 유저의 `public.users.invite_code`가 채워졌는지 확인한다. 비어 있으면(아직 코드 미통과) 앱 화면 접근을 막고 `/login/`으로 돌린다(로그인 페이지가 코드 입력 UI를 띄운다). **이 서버측 확인이 "코드 없는 유저의 데이터 접근 차단"의 실제 경계다** — 클라이언트 라우트 가드만으로는 유효 JWT 보유자가 URL 직접 접근으로 우회할 수 있기 때문이다. 확인은 유저 **자신의** access_token으로 PostgREST(`/rest/v1/users`)를 호출해 RLS("own data" SELECT 정책) 범위 안에서 자기 행만 읽으므로 `service_role` 비밀키가 필요 없고, 부여 유저는 프로세스 메모리(`_granted`)에 캐시돼 요청당 REST 호출이 없다(부여는 멱등·단조라 안전). 오류 시 **fail-closed**(미부여로 간주)한다. `settings.INVITE_GATE_ENABLED`(env `INVITE_GATE`)로 코드 요구만 따로 끌 수 있다 — 인증만 남기려면 `INVITE_GATE=0`.
+- **코드 검증·부여 (DB RPC)**: 미들웨어는 결과(`invite_code` 유무)만 읽고, 실제 검증/부여는 **DB의 `claim_invite` RPC가 전담**한다. allow-list(`invite_codes` 테이블)는 RLS로 정책 없이 잠겨 있어 DB 밖으로 나오지 않고, `SECURITY DEFINER` 함수만 접근한다. `login.html`이 로그인 직후 이 RPC를 호출해 코드를 제출하며, 통과하면 `public.users`에 코드·채널이 라벨링되고 이후 재진입은 멱등하게 통과한다.
+- **로그인 흐름 (클라이언트)**: `/login/`(`login.html`)에서 Supabase JS SDK가 Google OAuth를 처리한다. `web/static/web/js/auth.js`가 OAuth 콜백을 받아 세션을 세우고, access_token을 `sb-access-token` 쿠키에 동기화하며(서버 미들웨어가 읽음), 헤더의 **프로필 배너**(원형 Google 아바타 + 닉네임)를 채운다. 로그인 후 코드 미통과 유저에게는 `login.html`이 **코드 입력 상태**(`needsCode`)를 띄운다 — 마케팅 링크의 `?code=`로 코드를 프리필하거나 `localStorage`에 저장해 자동 제출(claim)한다. `/logout/`은 세션 쿠키를 지우고 클라이언트에서 Supabase `signOut` 후 로그인으로 돌아간다.
 - **프로필 배너**: 모든 공개 페이지 헤더에 재사용 partial `web/templates/web/_profile_banner.html`로 배너가 들어가고, 클릭하면 로그아웃 모달이 뜬다 (`auth.js`가 채움). `SUPABASE_URL`이 비어 있으면(로컬) 배너·인증 스크립트가 렌더되지 않는다.
+
+### Supabase 스키마 (`supabase/migrations/`)
+
+초대코드 게이트에 필요한 테이블·RPC는 SQL 마이그레이션으로 정의되며, Supabase **SQL Editor에서 순서대로 수동 실행**한다(Django ORM과 무관, 배포 파이프라인에 포함되지 않음).
+
+| 파일 | 내용 |
+|---|---|
+| `001_users_bootstrap.sql` | `auth.users`와 동기화되는 `public.users` 생성 + 가입 시 자동 생성 트리거 + "own data" RLS SELECT/UPDATE 정책. 002 이전에 실행 |
+| `002_invite_codes.sql` | `invite_codes`(allow-list, `app`/`channel`/`max_uses` 등, RLS로 정책 없이 잠금)·`invite_claims`(유입 트래킹 로그) 테이블 + `public.users`에 `invite_code`/`invited_channel`/`access_granted_at` 컬럼 + `claim_invite(p_code, p_app)` `SECURITY DEFINER` RPC(검증·부여·카운트·로그를 원자적으로 처리, 멱등) |
+| `003_invite_claims_view.sql` | `invite_claims_detailed` 뷰 — 클레임 로그에 이메일(`auth.users`)·닉네임(`public.users`)을 조인. 이메일 노출 방지를 위해 anon/authenticated `REVOKE` (관리자·service role 전용) |
+
+> gongo는 대시보드 데이터를 Supabase가 아니라 번들 스냅샷 JSON(Django)에서 서빙하므로, 코드 없는 유저 차단의 실제 경계는 위 미들웨어다. 나중에 Supabase가 직접 서빙하는 유저 데이터 테이블을 추가하면, 그 테이블 SELECT 정책에 `invite_code IS NOT NULL` EXISTS 조인을 걸어 PostgREST 직접 접근을 차단해야 한다(`002` 주석 참고).
 
 ### 설정 (`.env.prod`)
 
@@ -652,11 +669,11 @@ web/views: 스냅샷의 해당 섹션을 json_script로 템플릿에 임베드
 
 | 변수 | 설명 |
 |---|---|
-| `SUPABASE_URL` | Supabase 프로젝트 URL. JWKS 공개키 검증에 사용 (로그인 게이트 필수) |
-| `SUPABASE_ANON_KEY` | 브라우저 공개키 (publishable `sb_publishable_...` 권장, legacy anon JWT도 동작) |
+| `SUPABASE_URL` | Supabase 프로젝트 URL. JWKS 공개키 검증 + 초대코드 확인용 PostgREST 호출에 사용 (로그인 게이트 필수) |
+| `SUPABASE_ANON_KEY` | 브라우저 공개키 (publishable `sb_publishable_...` 권장, legacy anon JWT도 동작). 미들웨어가 PostgREST 호출 `apikey`로도 사용 |
 | `SUPABASE_JWT_SECRET` | (선택) Legacy JWT Secret — 프로젝트가 HS256(대칭) 서명일 때만 필요. 비대칭(JWKS) 서명이면 비워둔다 |
 
-`AUTH_GATE=1`인데 `SUPABASE_URL`/`SUPABASE_ANON_KEY`가 비면 로그인 불가로 사이트가 잠기므로, `deploy.sh`가 이를 경고한다.
+`AUTH_GATE`(인증)·`INVITE_GATE`(초대코드 요구)는 `deploy.sh`가 둘 다 `1`로 주입한다. `AUTH_GATE=1`인데 `SUPABASE_URL`/`SUPABASE_ANON_KEY`가 비면 로그인 불가로 사이트가 잠기므로, `deploy.sh`가 이를 경고한다.
 
 ---
 

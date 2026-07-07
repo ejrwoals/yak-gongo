@@ -8,7 +8,7 @@
 #   2) 비밀값을 Secret Manager('gongo-' 네임스페이스)에 동기화 후 reference 연결
 #        - DJANGO_SECRET_KEY   : 없으면 자동 생성
 #        - SUPABASE_JWT_SECRET : .env.prod 값 (로그인 게이트용)
-#   3) 공개 설정을 env 로 주입 (ALLOWED_HOSTS / AUTH_GATE / SUPABASE_URL / SUPABASE_ANON_KEY)
+#   3) 공개 설정을 env 로 주입 (ALLOWED_HOSTS / AUTH_GATE / INVITE_GATE / SUPABASE_URL / SUPABASE_ANON_KEY)
 #   4) gcloud run deploy --source . (Cloud Build가 Dockerfile로 빌드 → 배포)
 #
 # 실제 비밀은 .env.prod 에서만 읽으므로 스크립트엔 비밀이 박히지 않는다.
@@ -82,7 +82,7 @@ if [[ -n "$SUPABASE_JWT_SECRET" ]]; then
 fi
 
 # ── 3. 공개 env 조립 (값에 쉼표가 있어 커스텀 구분자 ^@@^ 사용) ──────
-ENV_PAIRS="ALLOWED_HOSTS=${PROD_HOST},.run.app@@AUTH_GATE=1"
+ENV_PAIRS="ALLOWED_HOSTS=${PROD_HOST},.run.app@@AUTH_GATE=1@@INVITE_GATE=1"
 [[ -n "$SUPABASE_URL" ]]      && ENV_PAIRS+="@@SUPABASE_URL=${SUPABASE_URL}"
 [[ -n "$SUPABASE_ANON_KEY" ]] && ENV_PAIRS+="@@SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
 

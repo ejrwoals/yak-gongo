@@ -42,6 +42,9 @@ MIDDLEWARE = [
 # 로그인 게이트 on/off (베타=켬). 정식 오픈 시 AUTH_GATE=0 으로 공개 전환.
 AUTH_GATE_ENABLED = os.environ.get('AUTH_GATE', '1') == '1'
 
+# 초대코드 요구 on/off (베타=켬). 인증만 남기고 코드 요구를 끄려면 INVITE_GATE=0.
+INVITE_GATE_ENABLED = os.environ.get('INVITE_GATE', '1') == '1'
+
 # 공개 템플릿은 auth/messages 컨텍스트를 쓰지 않는다 (+ Supabase 설정 주입)
 TEMPLATES[0]['OPTIONS']['context_processors'] = [
     'django.template.context_processors.request',
