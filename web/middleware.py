@@ -23,6 +23,7 @@ settings.INVITE_GATE_ENABLED 로 초대코드 요구를 각각 켜고 끈다(베
 """
 import json
 import logging
+import time
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -49,9 +50,12 @@ class SupabaseAuthMiddleware:
         self.jwks_url = f'{url}/auth/v1/.well-known/jwks.json' if url else ''
         self.rest_users_url = f'{url}/rest/v1/users' if url else ''
         self._jwks_client = None
-        # 부여가 확인된 유저 캐시. 부여는 멱등·단조(한 번 통과하면 계속 통과)이므로
-        # 프로세스 메모리에 영구 캐시해도 안전하다 → 부여 유저는 요청당 REST 호출 없음.
-        self._granted = set()
+        # 부여 확인 캐시(uid → 만료 시각). 관리자가 DB에서 invite_code를 NULL로 되돌려
+        # 권한을 "회수"할 수 있으므로 부여는 단조가 아니다 → 영구 캐시는 회수를 무시하는
+        # 보안 구멍이 된다. 기본 TTL=0(캐시 없음)으로 매 요청 재검증하여 회수를 즉시 반영한다.
+        # DB 부하가 문제되면 INVITE_GATE_CACHE_TTL(초)로 짧게 캐시할 수 있다(그만큼 회수 지연).
+        self._cache_ttl = int(getattr(settings, 'INVITE_GATE_CACHE_TTL', 0) or 0)
+        self._granted = {}
 
     def __call__(self, request):
         if not self.enabled or request.path.startswith(EXEMPT_PREFIXES):
@@ -101,11 +105,16 @@ class SupabaseAuthMiddleware:
         유저 자신의 access_token으로 PostgREST를 호출해 RLS("own data" SELECT 정책)
         범위 안에서 자기 행만 읽는다 → service_role 비밀키 불필요. 오류 시 fail-closed
         (미부여로 간주)하여 JWT 게이트와 동일하게 막는다.
+
+        기본적으로 매 요청 DB를 재검증한다 → 관리자가 invite_code를 NULL로 되돌리면
+        (권한 회수) 다음 요청부터 즉시 차단된다. TTL이 설정된 경우에만 그 시간 동안 캐시한다.
         """
         if not uid or not self.rest_users_url:
             return False
-        if uid in self._granted:
-            return True
+        if self._cache_ttl > 0:
+            exp = self._granted.get(uid)
+            if exp is not None and exp > time.monotonic():
+                return True
         try:
             req = Request(
                 f"{self.rest_users_url}?id=eq.{quote(uid)}&select=invite_code",
@@ -117,10 +126,16 @@ class SupabaseAuthMiddleware:
             )
             with urlopen(req, timeout=3) as resp:
                 rows = json.loads(resp.read().decode('utf-8'))
-            if rows and rows[0].get('invite_code'):
-                self._granted.add(uid)
-                return True
-            return False
         except Exception:
             logger.warning('invite access check failed for user %s', uid, exc_info=True)
+            self._granted.pop(uid, None)  # 오류 시 낡은 캐시를 신뢰하지 않음
             return False
+
+        granted = bool(rows and rows[0].get('invite_code'))
+        if granted:
+            if self._cache_ttl > 0:
+                self._granted[uid] = time.monotonic() + self._cache_ttl
+        else:
+            # 미부여이거나 권한이 회수됨 → 낡은 캐시 즉시 제거.
+            self._granted.pop(uid, None)
+        return granted
