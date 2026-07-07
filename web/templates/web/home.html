@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>얼마준藥</title>
+<title>얼마준약藥</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
 <style>
@@ -29,7 +29,9 @@
     <div style="max-width:1160px; height:100%; margin:0 auto; padding:0 40px; display:flex; align-items:center; justify-content:space-between;">
       <div style="display:flex; align-items:center; gap:34px;">
         <div style="display:flex; align-items:center; gap:11px;">
-          <span style="font-size:16px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">얼마준藥</span>
+          <span style="font-size:20px; font-weight:800; letter-spacing:-0.5px; white-space:nowrap;">얼마준<span style="color:#138255;">약藥</span></span>
+          <span style="font-size:13px; font-weight:600; color:#C7C7C0; white-space:nowrap;">-</span>
+          <span style="font-size:12px; font-weight:600; color:#9CA3AF; letter-spacing:-0.2px; white-space:nowrap;">전국 페약 시급 통계</span>
         </div>
         <nav style="display:flex; align-items:center; gap:4px;">
           <a href="{% url 'web:home' %}" style="padding:7px 14px; border-radius:9px; white-space:nowrap; font-size:14px; font-weight:700; color:#138255; background:#EAF6F0; text-decoration:none;">홈</a>
@@ -46,7 +48,7 @@
 
     <!-- intro -->
     <p style="max-width:780px; margin:0 0 28px; font-size:16px; line-height:1.8; color:#5C635A; letter-spacing:-0.2px;">
-      <b style="color:#2A302A;">팜리크루트</b>와 <b style="color:#2A302A;">약문약답</b>에서 웹크롤링을 통해 수집한 <b style="color:#2A302A;">전국의 약국 구인 공고</b> 기반으로 약국 약사의 <b style="color:#2A302A;">급여(시급)</b>를 조사했습니다. 모든 시급은 <b style="color:#0F7A4C;">세후</b> 기준으로 작성했으며, 분석 공고 수는 업데이트를 통해 추후 더 늘어날 수 있습니다.
+      <b style="color:#2A302A;">팜리크루트</b>와 <b style="color:#2A302A;">약문약답</b>에서 웹크롤링을 통해 수집한 <b style="color:#2A302A;">전국의 약국 구인 공고</b> 기반으로 약국 약사의 <b style="color:#2A302A;">급여(시급)</b>를 조사했습니다.<br>모든 시급은 <b style="color:#0F7A4C;">세후</b> 기준으로 작성했으며, 분석 공고 수는 간헐적인 업데이트를 통해 더 늘어납니다.
     </p>
 
     <!-- 분석 공고 수 callout -->
@@ -56,7 +58,7 @@
         <span style="font-size:16px; font-weight:700; color:#454C43; white-space:nowrap;">현재까지 분석한 <b style="color:#138255;">공고 수</b> :</span>
         <span style="font-size:34px; font-weight:800; letter-spacing:-1.5px; color:#138255; white-space:nowrap;"><span id="total-postings"></span><span style="font-size:17px; margin-left:4px;">개</span></span>
         <div style="margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
-          <span style="font-size:12px; font-weight:700; color:#0F7A4C; background:#E4F4EB; padding:6px 12px; border-radius:999px; white-space:nowrap;">세후 기준 · 매주 업데이트</span>
+          <span style="font-size:12px; font-weight:700; color:#0F7A4C; background:#E4F4EB; padding:6px 12px; border-radius:999px; white-space:nowrap;">세후 기준 · 간헐적 업데이트</span>
           <span style="font-size:12.5px; font-weight:700; color:#5C635A; white-space:nowrap;">Last Update : <span id="last-update" style="font-weight:600; color:#5C635A;"></span></span>
         </div>
       </div>
