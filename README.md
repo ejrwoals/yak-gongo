@@ -5,9 +5,9 @@
 ## 목적
 
 - **개인 리뷰 워크플로우**: Django Admin에서 LLM 추출 결과를 확인·수정·체크
-- **통계 공유**: 공개 웹 프론트엔드 **얼마준약藥**(`web` 앱)의 홈·근무 유형별 페이지에서 시급·지역·근무 유형별 통계를 외부에 공개
+- **통계 공유**: 공개 웹 프론트엔드 **페약얼마**(`web` 앱)의 홈·근무 유형별 페이지에서 시급·지역·근무 유형별 통계를 외부에 공개
 
-**하이브리드 배포 구조**: 관리자 기능(크롤러·LLM 파이프라인·Django Admin)은 로컬에서 SQLite DB를 두고 돌리고, 공개 프론트엔드 **얼마준약藥**은 DB 없이 번들된 스냅샷 JSON만 읽는 경량·무상태 앱으로 Google Cloud Run에 배포한다 ([배포 (Cloud Run)](#배포-cloud-run) 참고). 공개 배포본은 Supabase Google 로그인 + 초대코드 게이트로 보호된다 ([인증 (Supabase 로그인)](#인증-supabase-로그인) 참고).
+**하이브리드 배포 구조**: 관리자 기능(크롤러·LLM 파이프라인·Django Admin)은 로컬에서 SQLite DB를 두고 돌리고, 공개 프론트엔드 **페약얼마**는 DB 없이 번들된 스냅샷 JSON만 읽는 경량·무상태 앱으로 Google Cloud Run에 배포한다 ([배포 (Cloud Run)](#배포-cloud-run) 참고). 공개 배포본은 Supabase Google 로그인 + 초대코드 게이트로 보호된다 ([인증 (Supabase 로그인)](#인증-supabase-로그인) 참고).
 
 ---
 
@@ -88,7 +88,7 @@ yak-gongo/
 ├── geo/
 │   └── mapping.py           # 주소 → 지역코드, 지역 대분류 변환
 │
-├── web/                     # 외부 공개 웹 프론트엔드 앱 (얼마준약藥)
+├── web/                     # 외부 공개 웹 프론트엔드 앱 (페약얼마)
 │   ├── views.py             # 스냅샷을 읽어 페이지별 섹션을 템플릿에 임베드 + login/logout/healthz 뷰
 │   ├── snapshot.py          # get_latest_snapshot() — 로컬은 DB, 배포본은 JSON 파일에서 읽는 로더 추상화
 │   ├── middleware.py        # SupabaseAuthMiddleware — Supabase JWT 로그인 + 초대코드 게이트 (배포본 전용)
@@ -551,7 +551,7 @@ python manage.py auto_verify_step3 --limit 20
 
 ## 웹 대시보드
 
-**얼마준약藥** — `web` 앱이 제공하는 공개 프론트엔드(브랜드명)다. 로컬은 http://localhost:8011/ 에서 확인한다. 모든 시급은 세후 기준이다.
+**페약얼마** — `web` 앱이 제공하는 공개 프론트엔드(브랜드명)다. 로컬은 http://localhost:8011/ 에서 확인한다. 모든 시급은 세후 기준이다.
 
 ### 페이지 구성
 
@@ -598,7 +598,7 @@ web/views: 스냅샷의 해당 섹션을 json_script로 템플릿에 임베드
 
 ## 배포 (Cloud Run)
 
-관리자 시스템(크롤러·LLM 파이프라인·Django Admin·SQLite DB)은 로컬에서만 돌리고, 공개 프론트엔드 **얼마준약藥**만 Google Cloud Run에 **경량·무상태(stateless)** 앱으로 배포하는 하이브리드 구조다.
+관리자 시스템(크롤러·LLM 파이프라인·Django Admin·SQLite DB)은 로컬에서만 돌리고, 공개 프론트엔드 **페약얼마**만 Google Cloud Run에 **경량·무상태(stateless)** 앱으로 배포하는 하이브리드 구조다.
 
 ### 배포본이 로컬과 다른 점
 
