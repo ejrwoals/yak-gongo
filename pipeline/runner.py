@@ -12,7 +12,7 @@ from typing import Callable
 from google import genai
 
 from .tasks import run_task_1, run_task_2, run_task_3, run_task_4, run_task_5
-from .validator import error_check
+from .validator import error_check, normalize_wage_type
 from .salary import to_net_salary, ceil_hourly_wage
 
 
@@ -87,7 +87,7 @@ def process_posting(
     is_salary = t1.get('공고에 급여 명시 여부', False)
     is_one_time = t1.get('일회성 근무 여부', False)
     is_after_tax = t1.get('세후 금액 여부', True)
-    wage_type = t1.get('급여 유형') or ''
+    wage_type = normalize_wage_type(t1.get('급여 유형')) or ''
     wage = t1.get('급여')
 
     result['is_salary_disclosed'] = bool(is_salary)

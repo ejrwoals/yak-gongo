@@ -11,6 +11,24 @@ def error_message(message: str, error_history: str) -> str:
     return error_history + message + '\n'
 
 
+# LLM이 내놓는 급여 유형 표기 흔들림(오타·표기 변형)을 표준형으로 흡수.
+WAGE_TYPE_ALIASES = {
+    'montly': 'monthly',
+    'montly wage': 'monthly wage',
+    'montly salary': 'monthly wage',
+}
+
+
+def normalize_wage_type(value):
+    """LLM 급여 유형 값을 표준형으로 정규화. 미명시(None·빈 문자열)면 None 반환."""
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    if not s:
+        return None
+    return WAGE_TYPE_ALIASES.get(s, s)
+
+
 def compare_values(value_1, value_2, threshold: float = 0.1) -> bool:
     """
     두 값이 비슷한지 판단 (LLM 계산 오류 체크용).
@@ -73,9 +91,8 @@ def error_check(d: dict, error_history: str = '') -> tuple[str, float | None, fl
         'monthly wage', 'weekly wage', 'daily wage', 'hourly wage',
         '연봉', '월급', '주급', '일급', '일당', '시급',
     ]
-    wage_type = None
-    if d.get('급여 유형') is not None:
-        wage_type = str(d['급여 유형']).lower()
+    wage_type = normalize_wage_type(d.get('급여 유형'))
+    if wage_type is not None:
         if wage_type not in wage_type_list:
             msg = '[ ERROR ] 급여 유형이 올바르지 않아 monthly로 대체합니다.'
             error_history = error_message(msg, error_history)
