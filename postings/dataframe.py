@@ -8,9 +8,18 @@ from django.db.models import Exists, OuterRef
 from postings.models import AdminCheck, JobPosting
 
 
-def build_dataframe() -> pd.DataFrame:
-    """JobPosting 데이터를 읽어 통계 스크립트 호환 형식의 DataFrame으로 변환."""
-    qs = JobPosting.objects.annotate(is_reviewed=Exists(
+def build_dataframe(exclude_pending_review: bool = False) -> pd.DataFrame:
+    """JobPosting 데이터를 읽어 통계 스크립트 호환 형식의 DataFrame으로 변환.
+
+    exclude_pending_review=True 이면 아직 검토되지 않은 채 2·3단계 문제 큐
+    (outlier·에러)에 걸린 공고를 집계에서 제외한다. 검토 완료(AdminCheck) 또는
+    아무 큐에도 걸리지 않은 정상 공고만 남는다. 대시보드 스냅샷 생성에 사용.
+    """
+    qs = JobPosting.objects.all()
+    if exclude_pending_review:
+        from postings.review_presets import pending_review_pks
+        qs = qs.exclude(pk__in=pending_review_pks(JobPosting.objects.all()))
+    qs = qs.annotate(is_reviewed=Exists(
         AdminCheck.objects.filter(posting=OuterRef('pk'))
     )).values(
         'title', 'created_at', 'platform', 'url', 'pharmacy_name',

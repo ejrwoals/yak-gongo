@@ -243,6 +243,28 @@ def get_preset_queryset(preset_key, base_qs):
     return qs
 
 
+# ── 대시보드 집계 제외 대상: 미검토 문제 큐 ──────────────────────────
+# 2단계(outlier 검토) + 3단계(에러 재검토) 그룹의 모든 큐. 이 큐들은 전부
+# admin_check__isnull=True(미검토)를 조건으로 하므로, 검토 완료(AdminCheck 존재)
+# 공고는 어떤 경우에도 이 집합에 들어가지 않는다.
+PENDING_REVIEW_PRESET_KEYS = [
+    key for key, p in REVIEW_PRESETS.items()
+    if p['group'].startswith('2단계') or p['group'].startswith('3단계')
+]
+
+
+def pending_review_pks(base_qs):
+    """미검토 상태로 2·3단계 문제 큐에 걸린 공고 PK 집합.
+
+    각 큐 정의를 get_preset_queryset 로 그대로 재사용하므로 리뷰 대시보드의
+    큐 카운트와 정확히 일치한다. 대시보드 통계에서 이 공고들을 제외하는 데 쓴다.
+    """
+    pks = set()
+    for key in PENDING_REVIEW_PRESET_KEYS:
+        pks.update(get_preset_queryset(key, base_qs).values_list('pk', flat=True))
+    return pks
+
+
 def get_sort_expression(sort_field, sort_dir, preset_key):
     """정렬 필드와 방향에 맞는 Django ORM order_by 표현식을 반환한다."""
     preset = REVIEW_PRESETS[preset_key]

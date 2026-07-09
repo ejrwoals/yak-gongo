@@ -1082,9 +1082,13 @@ class LLMUsageEventAdmin(admin.ModelAdmin):
         return custom + urls
 
     def update_view(self, request):
-        """현재 DB 전체를 집계해 새 대시보드 스냅샷을 저장한다."""
+        """현재 DB를 집계해 새 대시보드 스냅샷을 저장한다.
+
+        미검토 상태로 2·3단계 문제 큐(outlier·에러)에 걸린 공고는 검증 전 값이라
+        집계에서 제외한다(검토 완료 또는 무플래그 정상 공고만 반영).
+        """
         try:
-            df = build_dataframe()
+            df = build_dataframe(exclude_pending_review=True)
             data = compute_dashboard_data(df)
             DashboardSnapshot.objects.create(data=data, posting_count=int(len(df)))
             self.message_user(

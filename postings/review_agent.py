@@ -605,26 +605,88 @@ def sum_session_usage(messages):
     return acc
 
 
+def _has_user_discussion(messages):
+    """사용자가 실제로 입력한 발화(자동 브리핑 트리거 제외)나 거부 방향 지시가 있었는지.
+
+    이게 없으면(=자동 브리핑만 있고 사용자가 아무것도 논의하지 않은 자명한 케이스)
+    LLM 요약을 부르지 않고 결정론 코멘트를 쓴다. 얇은 transcript 를 모델이
+    '이어쓸 대화의 시작'으로 오인해 가짜 대화를 지어내는 것을 원천 차단한다.
+    """
+    for m in messages:
+        if m.get('role') == 'user' and (m.get('text') or '').strip():
+            return True
+        if m.get('role') == 'tool' and (m.get('note') or '').strip():
+            return True
+    return False
+
+
+def _deterministic_comment(messages):
+    """LLM 없이 코멘트를 조립. 적용된 변경이 있으면 그 목록을, 없으면 '수정 없음'을 담는다."""
+    applied = collect_applied_changes(messages)
+    if applied:
+        desc = ', '.join(
+            f'{a.get("label", a.get("field"))} {a.get("old")}→{a.get("new")}' for a in applied)
+        return f'[대화형 검토] {desc} 수정 반영.'
+    return '[대화형 검토] 검토 결과 모든 값이 본문과 일치해 수정 없이 확인 완료.'
+
+
+def _looks_like_summary(text):
+    """LLM 출력이 '요약'인지 검증. transcript 이어쓰기/재생산 신호가 있으면 False.
+
+    - 역할 태그([사용자]/[agent]/[시스템]/[제안]/[적용]/[거부]/[user])가 다시 등장하면
+      대화를 이어쓴 것(요약이 아님)으로 본다.
+    - 1~2문장 요약 치고 과도하게 길거나 줄바꿈이 많으면 이어쓰기로 판단한다.
+    """
+    if not text:
+        return False
+    low = text.lower()
+    role_tags = ('[사용자]', '[agent]', '[시스템]', '[제안', '[적용', '[거부', '[user]', '[assistant]')
+    if any(tag in text or tag in low for tag in role_tags):
+        return False
+    if len(text) > 350 or text.count('\n') > 3:
+        return False
+    return True
+
+
 def generate_comment(posting, messages, client, model_name, usage=None):
-    """대화를 바탕으로 user_comment 1~3문장 요약 생성. usage 에 토큰 합산(과금 추적)."""
+    """대화를 바탕으로 user_comment 요약 생성.
+
+    결정론 기본 + LLM 보조: 사용자 논의가 없는 자명한 케이스는 LLM 없이 결정론
+    코멘트를 쓰고, 실제 다턴 논의가 있을 때만 LLM 요약을 시도하되 '요약답지 않으면'
+    (이어쓰기·환각) 결정론 코멘트로 폴백한다. usage 에 토큰 합산(과금 추적).
+    """
+    fallback = _deterministic_comment(messages)
+    if not _has_user_discussion(messages):
+        return fallback
+
     sys = (
-        '아래는 약국 구인공고 에러 케이스에 대한 대화형 검토 기록입니다. '
-        '이 대화를 바탕으로 무엇을 어떻게 검토/수정했는지 1~3문장의 한국어로 요약하세요. '
-        '반드시 "[대화형 검토]" 로 시작하고, 요약 문장만 출력하세요(군더더기 금지).'
+        '너는 약국 구인공고 "에러 케이스 대화형 검토" 세션 기록을 요약하는 역할이다. '
+        '아래 <transcript>…</transcript> 안은 이미 끝난 검토 대화의 기록이다. '
+        '유일한 작업은 이 기록을 압축해 서술하는 것이다: 무엇을 검토했고 어떤 필드를 어떻게 '
+        '수정했는지(또는 수정 없이 확인했는지)를 한국어 1~2문장으로 정리한다. '
+        'transcript 에 실제로 등장한 필드·수치만 근거로 삼는다. '
+        '역할 태그 없이 평서문으로 쓰고, "[대화형 검토]" 로 시작해 요약 문장만 출력한다.'
     )
     transcript = _format_transcript(messages) or '(대화 없음)'
-    response = client.models.generate_content(
-        model=model_name,
-        contents=[types.Content(role='user', parts=[types.Part(text=transcript)])],
-        config=types.GenerateContentConfig(
-            # 1~3문장 요약이라 thinking 불필요. thinking 을 끄고(예산 0) 한도를 넉넉히 둬
-            # 코멘트가 MAX_TOKENS 로 문장 중간에 잘리지 않도록 한다.
-            system_instruction=sys, temperature=0.3, max_output_tokens=2048,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[types.Content(role='user', parts=[types.Part(
+                text=f'<transcript>\n{transcript}\n</transcript>')])],
+            config=types.GenerateContentConfig(
+                # 짧은 요약이라 thinking 불필요(예산 0). 한도는 넉넉히 둬 문장 중간 절단 방지.
+                system_instruction=sys, temperature=0.3, max_output_tokens=2048,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f'[generate_comment ERROR] pk={getattr(posting, "pk", "?")}: {e}')
+        return fallback
     add_response(usage, response)
     text = (response.text or '').strip()
     if not text:
-        return '[대화형 검토] 검토 완료.'
-    return text if text.startswith('[대화형 검토]') else '[대화형 검토] ' + text
+        return fallback
+    if not text.startswith('[대화형 검토]'):
+        text = '[대화형 검토] ' + text
+    # 요약답지 않으면(이어쓰기·환각) 결정론 코멘트로 폴백.
+    return text if _looks_like_summary(text) else fallback
