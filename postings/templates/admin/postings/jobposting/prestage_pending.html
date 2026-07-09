@@ -2,8 +2,8 @@
 <div class="prestage-panel">
   <div class="prestage-desc">
     크롤링은 완료됐지만 아직 LLM 처리되지 않은 공고들입니다. 행을 선택해 처리하거나,
-    체크 없이 처리 버튼을 누르면 표시된 전체를 처리합니다. 각 공고는 LLM 5-task 파이프라인을
-    거쳐 JobPosting으로 저장됩니다.
+    체크 없이 처리 버튼을 누르면 처리할 개수를 입력받아 페이지와 무관하게 그만큼 처리합니다.
+    각 공고는 LLM 5-task 파이프라인을 거쳐 JobPosting으로 저장됩니다.
   </div>
 
   {% if total == 0 %}
@@ -24,8 +24,8 @@
         <button type="button" id="pending-histogram-btn" class="ps-hist-btn">📊 날짜별 분포 보기</button>
       </div>
       <div class="prestage-controls-right">
-        <span class="ps-help">체크 없이 누르면 표시된 전체를 처리합니다.</span>
-        <button type="button" id="process-selected-btn" class="ps-run-btn" disabled>
+        <span class="ps-help">체크 없이 누르면 처리할 개수를 물어봅니다.</span>
+        <button type="button" id="process-selected-btn" class="ps-run-btn" data-total="{{ total }}" disabled>
           선택 항목 LLM 처리 (<span id="process-selected-count">0</span>건)
         </button>
       </div>

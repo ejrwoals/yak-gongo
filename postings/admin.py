@@ -162,6 +162,8 @@ class JobPostingAdmin(admin.ModelAdmin):
                  name='jobposting_prestage_pending'),
             path('review/prestage/pending-histogram/', self.admin_site.admin_view(self.prestage_pending_histogram_view),
                  name='jobposting_prestage_pending_histogram'),
+            path('review/prestage/pending-ids/', self.admin_site.admin_view(self.prestage_pending_ids_view),
+                 name='jobposting_prestage_pending_ids'),
             path('review/prestage/process-one/', self.admin_site.admin_view(self.prestage_process_one_view),
                  name='jobposting_prestage_process_one'),
             path('review/token-usage/', self.admin_site.admin_view(self.token_usage_view),
@@ -531,6 +533,34 @@ class JobPostingAdmin(admin.ModelAdmin):
         total = sum(counts.values()) + null_count
         return JsonResponse({'buckets': buckets, 'null_count': null_count, 'total': total})
 
+    def prestage_pending_ids_view(self, request):
+        """AJAX GET: 처리 대기(RawPosting pending) 목록에서 정렬 순서대로 앞 N건의 id/title.
+
+        페이지네이션과 무관하게 배치 처리 대상을 뽑는다. count 파라미터로 개수를 제한하며,
+        진행 모달이 이 목록을 받아 건별로 process-one 을 호출한다.
+        """
+        valid = {f for f, _ in self.PENDING_SORT_FIELDS}
+        sort = request.GET.get('sort', 'created_at')
+        if sort not in valid:
+            sort = 'created_at'
+        sort_dir = request.GET.get('sort_dir', 'desc')
+        if sort_dir not in ('asc', 'desc'):
+            sort_dir = 'desc'
+        order = ('-' if sort_dir == 'desc' else '') + sort
+
+        try:
+            count = int(request.GET.get('count', '0'))
+        except (TypeError, ValueError):
+            count = 0
+        if count < 1:
+            return JsonResponse({'ok': False, 'error': 'count 는 1 이상이어야 합니다.'}, status=400)
+
+        qs = RawPosting.objects.filter(status=RawPosting.STATUS_PENDING).order_by(order, 'id')
+        total = qs.count()
+        rows = qs.values('id', 'title')[:count]
+        items = [{'id': r['id'], 'title': r['title'] or ''} for r in rows]
+        return JsonResponse({'ok': True, 'items': items, 'total': total})
+
     def prestage_process_one_view(self, request):
         """AJAX POST: pending RawPosting 한 건을 LLM 처리하여 JobPosting 생성.
 
@@ -565,7 +595,10 @@ class JobPostingAdmin(admin.ModelAdmin):
             return JsonResponse({'ok': False, 'error': 'GOOGLE_API_KEY 미설정'}, status=500)
 
         client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-        result = process_raw_posting(raw, client, settings.LLM_MODEL, log=lambda m: None)
+        # 대시보드 모달이 이 뷰를 동시에 여러 건 호출하므로(병렬 처리),
+        # 전역 sys.stdout 스왑 캡처를 꺼서 요청 간 clobber 를 방지한다.
+        result = process_raw_posting(raw, client, settings.LLM_MODEL,
+                                     log=lambda m: None, capture_stdout=False)
         return JsonResponse({'ok': True, 'result': result})
 
     def token_usage_view(self, request):

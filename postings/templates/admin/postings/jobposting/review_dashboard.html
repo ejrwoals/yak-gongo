@@ -97,6 +97,32 @@
   </div>
 </div>
 
+<!-- 선택 없이 실행 시: 처리 개수 입력 모달 -->
+<div id="count-modal" class="verify-modal" style="display:none;">
+  <div class="verify-modal-box count-modal-box">
+    <div class="verify-modal-header">
+      <strong>🔧 LLM 처리 개수 선택</strong>
+      <div class="verify-modal-actions">
+        <button id="count-cancel-btn" class="verify-btn-close">취소</button>
+      </div>
+    </div>
+    <div class="count-modal-body">
+      <p class="count-modal-desc" id="count-desc"></p>
+      <div id="count-pick">
+        <div class="count-quick" id="count-quick"></div>
+        <div class="count-input-row">
+          <input type="number" id="count-input" min="1" step="1" value="25">
+          <span class="count-input-suffix">건 처리</span>
+        </div>
+      </div>
+      <div class="count-warn">💰 각 공고는 LLM 5-task 파이프라인을 거칩니다. API 비용이 발생하며 시간이 걸릴 수 있습니다.</div>
+      <div class="count-modal-footer">
+        <button id="count-start-btn" class="ps-run-btn"><span id="count-start-label">처리 시작</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- AI agent 대화형 검토 모달 (공용 부분템플릿) -->
 {% include "admin/postings/jobposting/agent_chat.html" %}
 
@@ -268,10 +294,30 @@
   .verify-btn-close:hover { background: #d3d9df; }
   .verify-btn-close:disabled { opacity: 0.5; cursor: default; }
 
-  .verify-progress-track { height: 10px; background: #eee; }
+  .verify-progress-track {
+    height: 16px; background: #dbe0e6;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.12);
+  }
+  /* 보라 헤더에 묻히지 않도록 대비 강한 초록 + 움직이는 바버폴 스트라이프 */
   .verify-progress-bar {
-    height: 100%; width: 0; background: linear-gradient(90deg, #6f42c1, #9461e0);
+    position: relative; height: 100%; width: 0; overflow: hidden;
+    background: linear-gradient(90deg, #12b886, #22c55e);
+    box-shadow: 0 0 8px rgba(34,197,94,0.65);
     transition: width 0.25s ease;
+  }
+  .verify-progress-bar::after {
+    content: ''; position: absolute; inset: 0;
+    background-image: linear-gradient(45deg,
+      rgba(255,255,255,0.28) 25%, transparent 25%, transparent 50%,
+      rgba(255,255,255,0.28) 50%, rgba(255,255,255,0.28) 75%, transparent 75%, transparent);
+    background-size: 1rem 1rem;
+    animation: vprogress-stripes 0.7s linear infinite;
+  }
+  /* 완료 시 스트라이프 애니메이션을 멈춰 '진행 중'으로 오인되지 않게 한다 */
+  .verify-progress-bar.done::after { animation: none; opacity: 0; }
+  @keyframes vprogress-stripes {
+    from { background-position: 1rem 0; }
+    to { background-position: 0 0; }
   }
   .verify-summary {
     padding: 10px 18px; font-size: 13px; color: #333; border-bottom: 1px solid #eee;
@@ -282,6 +328,32 @@
   .verify-summary .vs-error { color: #d9480f; }
   .verify-summary .vs-failed { color: #868e96; }
   .verify-summary .vs-skipped { color: #adb5bd; }
+
+  /* 처리 개수 입력 모달 */
+  .count-modal-box { width: min(440px, 92vw); }
+  .count-modal-body { padding: 20px 22px 22px; }
+  .count-modal-desc { font-size: 13.5px; color: #444; line-height: 1.6; margin: 0 0 16px; }
+  .count-modal-desc strong { color: #6f42c1; font-variant-numeric: tabular-nums; }
+  .count-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .count-quick button {
+    padding: 6px 14px; border: 1px solid #d6cdf0; background: #f4f1fb; color: #4a3b86;
+    border-radius: 20px; cursor: pointer; font-size: 12.5px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .count-quick button:hover { background: #e9e3f7; }
+  .count-quick button.active { background: #6f42c1; color: #fff; border-color: #6f42c1; }
+  .count-input-row { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .count-input-row input {
+    width: 130px; padding: 9px 12px; border: 1.5px solid #cfc4ec; border-radius: 6px;
+    font-size: 16px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .count-input-row input:focus { outline: none; border-color: #6f42c1; box-shadow: 0 0 0 3px rgba(111,66,193,0.15); }
+  .count-input-suffix { font-size: 13px; color: #666; }
+  .count-warn {
+    font-size: 12px; color: #856404; background: #fff8e6; border-left: 3px solid #ffc107;
+    border-radius: 0 4px 4px 0; padding: 8px 11px; line-height: 1.5; margin-bottom: 18px;
+  }
+  .count-modal-footer { display: flex; justify-content: flex-end; }
 
   /* 날짜별 분포 히스토그램 모달 */
   #histogram-modal .verify-modal-box { width: min(1240px, 96vw); }
@@ -745,6 +817,15 @@
   function verifySetRow(row, item) {
     row.className = 'verify-log-row status-' + item.status;
     row.innerHTML = verifyRowHtml(item);
+    // 완료된 건은 '검토중'(running) 블록 바로 위로 옮겨, 검토중을 항상 맨 아래에 모은다.
+    // (동시 처리 시 완료/검토중이 뒤섞이는 것을 방지)
+    if (item.status !== 'running') {
+      const log = row.parentNode;
+      const firstRunning = log && log.querySelector('.verify-log-row.status-running');
+      if (firstRunning && firstRunning !== row.nextSibling) {
+        log.insertBefore(row, firstRunning);
+      }
+    }
   }
 
   function verifyUpdateSummary(total, tally) {
@@ -772,6 +853,7 @@
     document.getElementById('verify-modal-title').textContent = `🤖 LLM 자동 검토 — ${presetLabel}`;
     document.getElementById('verify-log').innerHTML = '';
     document.getElementById('verify-progress-bar').style.width = '0';
+    document.getElementById('verify-progress-bar').classList.remove('done');
     const stopBtn = document.getElementById('verify-stop-btn');
     const closeBtn = document.getElementById('verify-close-btn');
     stopBtn.disabled = false; stopBtn.textContent = '중지'; stopBtn.style.display = '';
@@ -783,6 +865,7 @@
       verifyRun.running = false;
       stopBtn.style.display = 'none';
       closeBtn.disabled = false;
+      document.getElementById('verify-progress-bar').classList.add('done');
       document.getElementById('verify-summary').insertAdjacentHTML(
         'beforeend', `<span class="vs-count">${stopped ? '⏹ 중지됨' : '✅ 완료'}</span>`);
       btn.disabled = false;
@@ -1208,16 +1291,104 @@
       cb.addEventListener('change', updateCount));
 
     btn.addEventListener('click', function() {
-      let checked = Array.from(prestageContainer.querySelectorAll('.pending-select:checked'));
-      if (checked.length === 0) checked = Array.from(prestageContainer.querySelectorAll('.pending-select'));
-      const items = checked.map(cb => {
-        const tr = cb.closest('tr.pending-row');
-        const titleEl = tr && tr.querySelector('.cell-title');
-        return { id: parseInt(cb.value), title: titleEl ? titleEl.textContent.trim() : '' };
+      const checked = Array.from(prestageContainer.querySelectorAll('.pending-select:checked'));
+      // 선택한 항목이 있으면 개수 확인만 받고 처리한다.
+      if (checked.length > 0) {
+        const items = checked.map(cb => {
+          const tr = cb.closest('tr.pending-row');
+          const titleEl = tr && tr.querySelector('.cell-title');
+          return { id: parseInt(cb.value), title: titleEl ? titleEl.textContent.trim() : '' };
+        });
+        confirmRunModal(items.length, function() { runProcess(items); });
+        return;
+      }
+      // 선택이 없으면 페이지네이션과 무관하게 처리할 개수를 입력받아, 정렬 순서대로 그만큼 처리한다.
+      const totalPending = parseInt(btn.dataset.total || '0', 10);
+      if (!totalPending) { alert('처리 대기 중인 공고가 없습니다.'); return; }
+      openCountModal(totalPending, function(wanted) {
+        btn.disabled = true;
+        fetch(`prestage/pending-ids/?sort=${pendingSort.field}&sort_dir=${pendingSort.dir}&count=${wanted}`)
+          .then(r => r.json())
+          .then(d => {
+            if (!d.ok) { alert(d.error || '대상 목록을 불러오지 못했습니다.'); return; }
+            runProcess(d.items || []);
+          })
+          .catch(() => alert('대상 목록을 불러오지 못했습니다.'))
+          .finally(() => { btn.disabled = false; });
       });
-      runProcess(items);
     });
   }
+
+  // 처리 개수 입력 모달 (선택 없이 실행할 때)
+  const countModal = document.getElementById('count-modal');
+  const countInput = document.getElementById('count-input');
+  const countQuick = document.getElementById('count-quick');
+  let countModalOnConfirm = null;
+  let countModalMax = 0;
+
+  function countModalClose() { countModal.style.display = 'none'; countModalOnConfirm = null; }
+
+  function countSyncQuick() {
+    const v = parseInt(countInput.value, 10);
+    countQuick.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('active', parseInt(b.dataset.count, 10) === v));
+  }
+
+  // 개수 지정 모드: 대기 목록에서 몇 건을 처리할지 고른다.
+  function openCountModal(total, onConfirm) {
+    countModalMax = total;
+    countModalOnConfirm = onConfirm;
+    document.getElementById('count-pick').style.display = '';
+    document.getElementById('count-start-label').textContent = '처리 시작';
+    document.getElementById('count-desc').innerHTML =
+      `선택한 항목이 없습니다. 대기 중인 <strong>${total.toLocaleString()}</strong>건 중 ` +
+      `위에서부터(정렬 순서대로) 몇 건을 처리할지 정하세요.`;
+    // 총 대기건수를 넘지 않는 프리셋 + '전체' 버튼을 만든다.
+    const presets = [25, 50, 100, 250, 500].filter(n => n < total);
+    countQuick.innerHTML = presets.map(n =>
+      `<button type="button" data-count="${n}">${n}건</button>`).join('') +
+      `<button type="button" data-count="${total}">전체 ${total.toLocaleString()}건</button>`;
+    countQuick.querySelectorAll('button').forEach(b => b.addEventListener('click', function() {
+      countInput.value = this.dataset.count;
+      countSyncQuick();
+    }));
+    countInput.max = total;
+    countInput.value = Math.min(25, total);
+    countSyncQuick();
+    countModal.style.display = 'flex';
+    countInput.focus();
+    countInput.select();
+  }
+
+  // 확인 모드: 이미 정해진 N건을 처리할지 확인만 받는다(선택 항목 처리).
+  function confirmRunModal(count, onConfirm) {
+    countModalMax = count;
+    countModalOnConfirm = onConfirm;
+    document.getElementById('count-pick').style.display = 'none';
+    document.getElementById('count-start-label').textContent = `${count.toLocaleString()}건 처리 시작`;
+    document.getElementById('count-desc').innerHTML =
+      `선택한 <strong>${count.toLocaleString()}</strong>건을 LLM으로 처리하여 JobPosting을 생성합니다.`;
+    countInput.value = count;
+    countModal.style.display = 'flex';
+    document.getElementById('count-start-btn').focus();
+  }
+
+  function countModalConfirm() {
+    let n = parseInt(countInput.value, 10);
+    if (!Number.isFinite(n) || n < 1) { countInput.focus(); return; }
+    n = Math.min(n, countModalMax);
+    const cb = countModalOnConfirm;
+    countModalClose();
+    if (cb) cb(n);
+  }
+
+  countInput.addEventListener('input', countSyncQuick);
+  countInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); countModalConfirm(); }
+  });
+  document.getElementById('count-start-btn').addEventListener('click', countModalConfirm);
+  document.getElementById('count-cancel-btn').addEventListener('click', countModalClose);
+  countModal.addEventListener('click', function(e) { if (e.target === countModal) countModalClose(); });
 
   // 처리 대기 공고 날짜별 분포 모달
   const histogramModal = document.getElementById('histogram-modal');
@@ -1296,7 +1467,6 @@
   // 진행 모달을 재사용한 건별 LLM 처리 실행
   function runProcess(items) {
     if (!items.length) { alert('처리할 공고가 없습니다.'); return; }
-    if (!confirm(`${items.length}건을 LLM으로 처리하여 JobPosting을 생성합니다.\nAPI 비용이 발생하며 시간이 걸릴 수 있습니다. 진행할까요?`)) return;
 
     const total = items.length;
     const tally = { ok: 0, error: 0, failed: 0, skipped: 0, done: 0 };
@@ -1306,6 +1476,7 @@
     document.getElementById('verify-modal-title').textContent = '🔧 LLM 프로세싱';
     document.getElementById('verify-log').innerHTML = '';
     document.getElementById('verify-progress-bar').style.width = '0';
+    document.getElementById('verify-progress-bar').classList.remove('done');
     const stopBtn = document.getElementById('verify-stop-btn');
     const closeBtn = document.getElementById('verify-close-btn');
     stopBtn.disabled = false; stopBtn.textContent = '중지'; stopBtn.style.display = '';
@@ -1317,6 +1488,7 @@
       verifyRun.running = false;
       stopBtn.style.display = 'none';
       closeBtn.disabled = false;
+      document.getElementById('verify-progress-bar').classList.add('done');
       document.getElementById('verify-summary').insertAdjacentHTML(
         'beforeend', `<span class="vs-count">${stopped ? '⏹ 중지됨' : '✅ 완료'}</span>` +
         `<span class="vs-count" style="color:#6f42c1;">💰 ${fmtTok(totals.tokens)} tok · $${totals.cost.toFixed(4)}</span>`);
@@ -1324,9 +1496,24 @@
       loadPrestage('process');  // 대기 목록 갱신
     }
 
-    function processNext(i) {
-      if (verifyRun.stop) { finish(true); return; }
-      if (i >= items.length) { finish(false); return; }
+    // 공고끼리는 독립적이므로 CONCURRENCY 건을 동시에 처리한다(직렬 대비 대폭 단축).
+    // 각 process-one 은 서버에서 Gemini 를 최대 5회 호출하므로, API rate limit 을
+    // 감안해 과하지 않게 잡는다. 중지 시 진행 중인 건은 끝내되 새 건은 시작하지 않는다.
+    const CONCURRENCY = 6;
+    let next = 0;
+    let active = 0;
+    let finished = false;
+
+    function maybeFinish() {
+      if (finished) return;
+      const stopped = verifyRun.stop;
+      if ((stopped || next >= items.length) && active === 0) {
+        finished = true;
+        finish(stopped);
+      }
+    }
+
+    function processOne(i) {
       const cur = items[i];
       const row = verifyAppendRow({ id: cur.id, status: 'running', title: cur.title || '(제목 없음)', note: '처리 중…' });
       fetch('prestage/process-one/', {
@@ -1343,16 +1530,27 @@
           if (item.usage) { totals.tokens += item.usage.total_tokens || 0; totals.cost += item.usage.cost_usd || 0; }
           tally.done++;
           verifyUpdateSummary(total, tally);
-          processNext(i + 1);
         })
         .catch(() => {
           verifySetRow(row, { id: cur.id, status: 'failed', title: cur.title || '', note: '네트워크 오류' });
           tally.failed++; tally.done++;
           verifyUpdateSummary(total, tally);
-          processNext(i + 1);
+        })
+        .finally(() => {
+          active--;
+          pump();
         });
     }
-    processNext(0);
+
+    function pump() {
+      while (!verifyRun.stop && next < items.length && active < CONCURRENCY) {
+        active++;
+        processOne(next++);
+      }
+      maybeFinish();
+    }
+
+    pump();
   }
 
   // 초기화

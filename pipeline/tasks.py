@@ -19,6 +19,21 @@ from .prompts import (
 )
 
 
+def _gen_config(model_name: str):
+    """추출 태스크용 GenerateContentConfig.
+
+    Task1~5 는 few-shot 기반 구조화 JSON 추출이라 사고(thinking)가 사실상 불필요하다.
+    gemini-2.5-flash / flash-lite 는 기본적으로 thinking 이 켜져 있어 매 호출마다 지연·
+    토큰이 붙으므로 thinking_budget=0 으로 끈다(지연·비용 즉시 감소).
+    pro 계열은 최소 사고 예산이 있어 0으로 끌 수 없으므로 기본 설정(None)을 쓴다.
+    """
+    if 'pro' in (model_name or '').lower():
+        return None
+    return types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+    )
+
+
 def _call_gemini(query: str, body: str, client: genai.Client, model_name: str,
                  few_shot: str | None = None, usage: dict | None = None) -> str | None:
     """Gemini API 호출 래퍼 (google-genai SDK).
@@ -33,6 +48,7 @@ def _call_gemini(query: str, body: str, client: genai.Client, model_name: str,
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
+            config=_gen_config(model_name),
         )
         add_response(usage, response)
         return response.text

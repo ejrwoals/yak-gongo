@@ -219,10 +219,16 @@ def process_stage(run: PipelineRun, log=None, client=None, model_name: str = '')
     return {'processed': processed, 'errors': errors, 'skipped': skipped}
 
 
-def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
+def process_raw_posting(raw, client, model_name: str = '', log=None,
+                        capture_stdout: bool = True) -> dict:
     """단일 RawPosting을 LLM 처리하여 JobPosting을 생성하고 status를 갱신한다.
 
     process_stage(일괄)와 대시보드의 건별 처리(진행 모달)가 공유하는 단위 처리 함수.
+
+    capture_stdout=True 이면 tasks/validator 의 print() 를 전역 sys.stdout 스왑으로
+    가로채 log 로 흘려보낸다(단일 스레드 진단용). 이 스왑은 프로세스 전역이라
+    동시 호출 시 서로를 덮어써 위험하므로, 여러 건을 동시에 처리하는 경로
+    (대시보드 병렬 process-one 등)에서는 capture_stdout=False 로 꺼야 한다.
 
     Returns dict:
         {'id', 'title', 'status', 'note'}
@@ -253,25 +259,29 @@ def process_raw_posting(raw, client, model_name: str = '', log=None) -> dict:
     # 급여 미명시(skip)·예외 상황에서도 caller(여기)가 읽어 기록할 수 있도록 인자로 관통시킨다.
     acc = new_accumulator()
 
-    # stdout 캡처 (tasks/validator의 print() 포함)
-    captured = io.StringIO()
-    old_stdout = sys.stdout
-    sys.stdout = captured
+    # tasks/validator 의 print() 를 log 로 흘려보내는 stdout 캡처.
+    # 전역 sys.stdout 스왑이라 동시 호출 시 clobber 되므로 capture_stdout 로 끈다.
     try:
-        pipeline_result = process_posting(raw.body, client, model_name, log=log, usage=acc)
+        if capture_stdout:
+            captured = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = captured
+            try:
+                pipeline_result = process_posting(raw.body, client, model_name, log=log, usage=acc)
+            finally:
+                sys.stdout = old_stdout
+                captured_text = captured.getvalue()
+                if captured_text.strip():
+                    log(f'[stdout] {captured_text.strip()}')
+        else:
+            pipeline_result = process_posting(raw.body, client, model_name, log=log, usage=acc)
     except Exception as e:
-        sys.stdout = old_stdout
         log(f'[PIPELINE ERROR] {raw.url}: {e}')
         raw.status = RawPosting.STATUS_ERROR
         raw.error_log = str(e)
         raw.save(update_fields=['status', 'error_log'])
         # failed(예외 중단)는 비용을 기록하지 않는다(기록 규칙).
         return {**base, 'status': 'failed', 'note': str(e)}
-    finally:
-        sys.stdout = old_stdout
-        captured_text = captured.getvalue()
-        if captured_text.strip():
-            log(f'[stdout] {captured_text.strip()}')
 
     if pipeline_result is None:
         raw.status = RawPosting.STATUS_SKIPPED
