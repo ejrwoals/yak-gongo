@@ -1,0 +1,68 @@
+/* 페약얼마 공개 웹 — 모바일 반응형 오버라이드.
+ *
+ * 페이지들이 전부 인라인 스타일로 작성돼 있어, 인라인 선언이 일반 스타일시트보다
+ * 우선순위가 높다. 따라서 좁은 화면에서 레이아웃을 바꾸려면 !important 로 덮는다.
+ * 클래스 추가 없이 구조 선택자(main, header, 속성 선택자)만으로 타겟한다.
+ */
+
+@media (max-width: 680px) {
+  /* 가로 스크롤 유발 방지: 넘치는 요소가 있어도 페이지 자체는 안 밀리게 */
+  html, body { overflow-x: hidden; }
+
+  /* 본문 좌우 패딩 축소 — 고정 40~56px 패딩이 폰 폭을 잡아먹어
+     텍스트가 글자 단위로 쪼개지던 문제 해결 */
+  main {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+    padding-top: 26px !important;
+  }
+
+  /* 카드형 본문(fulltime/weekend/onetime/etc)은 화면 폭에 딱 맞춰 여백 최소화 */
+  main[style*="border-radius:18px"] {
+    margin-left: 10px !important;
+    margin-right: 10px !important;
+  }
+
+  /* 제목+부제가 flex로 묶인 카드 페이지 h1: 좁은 폭에서 부제가 세로로
+     눌리지 않도록 줄바꿈 허용 */
+  main h1 { flex-wrap: wrap !important; }
+
+  /* 2단 그리드(표+차트, 통계 2열, 평일/주말 입력 등)를 세로 1단으로 접기 */
+  main [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+
+  /* 근무 스케줄 리스트(display:flex 인 li): 좁은 폭에서 '평일 5일'·'(9시~18시)'가
+     글자 단위로 쪼개지던 문제 해결. 각 조각은 통째로 유지하고, 넘치면 li 단위로 줄바꿈. */
+  main li[style*="display:flex"] {
+    flex-wrap: wrap !important;
+    row-gap: 3px !important;
+  }
+  main li[style*="display:flex"] > * {
+    white-space: nowrap !important;
+  }
+
+  /* sticky 헤더: 좁은 화면에서 [브랜드 + 프로필]은 첫 줄에 유지하고, nav 링크만
+     아래 줄로 내린다. 브랜드+nav를 감싼 그룹을 display:contents로 풀어
+     브랜드/nav/프로필을 같은 flex 레벨로 올린 뒤, nav만 전체폭 새 줄로 배치. */
+  header {
+    height: auto !important;
+  }
+  header > div {
+    padding: 9px 14px !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    row-gap: 9px !important;
+    column-gap: 10px !important;
+  }
+  header > div > div:first-child {   /* 브랜드+nav 래퍼 해제 */
+    display: contents !important;
+  }
+  header nav {
+    order: 3 !important;             /* 브랜드·프로필 뒤로 */
+    flex: 1 0 100% !important;       /* 항상 전체폭 새 줄 */
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+}

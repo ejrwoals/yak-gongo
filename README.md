@@ -99,6 +99,8 @@ yak-gongo/
 │   │                        #   + login.html · logout.html (Supabase Google 로그인)
 │   │                        #   + _auth_scripts.html (Supabase JS 초기화, 공개 페이지 공통 include)
 │   │                        #   + _profile_banner.html (헤더 프로필 배너: 아바타·닉네임·로그아웃 모달)
+│   ├── static/web/css/
+│   │   └── mobile.css       # 공개 웹 모바일 반응형 오버라이드 (인라인 스타일을 @media + !important로 덮음)
 │   └── static/web/js/
 │       ├── charts.js        # 순수 SVG 차트 빌더 (데이터 입력과 분리된 순수 함수)
 │       ├── home.js / fulltime.js / weekend.js / etc.js / onetime.js  # 페이지별 데이터 바인딩
@@ -597,6 +599,7 @@ web/views: 스냅샷의 해당 섹션을 json_script로 템플릿에 임베드
 - **갱신 방법**: 리뷰 대시보드의 **최종 점검** 프리셋 그룹에 있는 **대시보드 업데이트** 버튼(`dashboardsnapshot_update` URL)을 누르면 현재 DB를 집계해 새 스냅샷 한 건이 추가된다. 이때 아직 검토되지 않은 채 2·3단계 문제 큐(outlier·에러)에 걸린 공고는 검증 전 값이라 집계에서 제외하고(`exclude_pending_review=True` → `review_presets.pending_review_pks`), 검토 완료(`AdminCheck` 존재) 또는 어떤 큐에도 걸리지 않은 정상 공고만 반영한다. 항상 가장 최근 스냅샷이 노출된다.
 - **스냅샷 소스 추상화**: 뷰는 `web/snapshot.get_latest_snapshot()`을 통해 `{data, posting_count, last_update}` 형태의 정규화된 스냅샷을 받는다. `settings.SNAPSHOT_FROM_FILE` 플래그로 소스가 갈린다 — 로컬(기본)은 DB의 최신 `DashboardSnapshot`을, 배포본은 번들된 `web/snapshot/latest.json`을 읽는다. 배포본에는 `postings` 앱이 없으므로 DB 모드에서만 모델을 지연 import 한다 ([배포 (Cloud Run)](#배포-cloud-run) 참고).
 - **차트 렌더링**: `web/static/web/js/charts.js`는 데이터 입력과 분리된 순수 SVG 빌더(`buildHistogram`, `buildScatter`, `buildBubble`, 시급 분포용 `buildViolin`, "내 시급 비교"용 `buildCompare`/`buildHoursScatter` 등)로, 입력 형태만 맞으면 실데이터/목업 어느 쪽이든 동일하게 렌더한다. 페이지별 `*.js`가 임베드 데이터를 각 빌더에 바인딩한다. 근무 유형별 페이지의 지역 시급 분포는 바이올린 차트(`buildViolin`: 폭=시급대 공고 밀도, 흰 박스=IQR·중앙값, 빨간 사각형=평균)로 렌더한다.
+- **스타일링·모바일 대응**: 페이지 스타일은 각 템플릿의 인라인 `<style>`/인라인 속성으로 작성한다. 좁은 화면(≤680px) 대응만 별도 스타일시트 `web/static/web/css/mobile.css`가 담당하며, 8개 공개 페이지 `<head>`에서 링크한다. 인라인 선언이 우선순위가 높아 `@media (max-width: 680px)` 안에서 `!important` + 구조 선택자(`main`·`header`·`[style*=…]` 속성 선택자)로 덮는 방식이라 HTML 마크업·클래스는 건드리지 않고 본문 패딩 축소·2단 그리드의 1단 접기·sticky 헤더 줄바꿈·가로 스크롤 방지를 적용한다.
 
 ---
 
