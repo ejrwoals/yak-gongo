@@ -184,27 +184,14 @@
 
     <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
 
-    <!-- toggle: 활용법 -->
-    <div style="background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; overflow:hidden;">
-      <button data-toggle="use" style="width:100%; display:flex; align-items:center; gap:10px; padding:15px 18px; text-align:left;">
-        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-        <span style="font-size:14.5px; font-weight:700; color:#454C43;">&larr; 클릭!&nbsp;&nbsp;⭐ 나의 구직에 활용법 ⭐</span>
-      </button>
-      <div data-panel="use" hidden>
-        <div style="padding:0 22px 22px 40px; font-size:14.5px; line-height:1.85; color:#5C635A;">
-          <div style="font-size:15px; font-weight:800; color:#3A4138; margin-bottom:14px;">⭐ 나의 구직에 활용법 ⭐</div>
-          <ol style="margin:0 0 16px; padding-left:20px; display:flex; flex-direction:column; gap:9px;">
-            <li>내가 현재 보고 있는 (주말 파트가 아닌) <b style="color:#3A4138;">파트타임</b> 공고의 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">시급</b>을 계산합니다.</li>
-            <li>아래 <b style="color:#3A4138;">지역 카테고리</b> 중 내 공고에 해당하는 지역 그래프에서 점을 찍어 다른 공고들과 비교해 봅니다.</li>
-          </ol>
-          <p style="margin:0 0 18px;">예를들어, 지역은 <b style="color:#2A302A;">경기 외곽</b>이고 시급이 <b style="color:#2A302A;">2.6만원</b>인 경우, 아래 그래프에서 <b style="color:#2438D8;">파란색 별표</b>와 같이 점이 찍힙니다. 해당 지역의 다른 공고들 분포와 비교해보면서 어느정도인지 판단합니다.</p>
-          <figure style="margin:0;">
-            <figcaption style="text-align:center; font-size:14px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 기타 파트 근무 시급 비교하기</figcaption>
-            <div id="chart-my-bubble" style="border:1px solid #ECECE4; border-radius:12px; padding:10px 12px; background:#fff;"></div>
-          </figure>
-        </div>
+    <!-- 내 시급 비교 CTA -->
+    <a href="{% url 'web:compare' %}" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; background:#EAF6F0; border:1px solid #C5E4CF; border-radius:14px; padding:20px 24px; text-decoration:none;">
+      <div style="flex:1; min-width:200px;">
+        <div style="font-size:16px; font-weight:800; color:#138255; margin-bottom:5px;">⭐ 내 시급은 어느 정도일까?</div>
+        <div style="font-size:14.5px; line-height:1.7; color:#3A4138;">근무 조건만 입력하면 같은 근무형태·지역 공고 중 <b style="color:#2A302A;">내 시급이 상위 몇 %</b>인지 바로 알려드려요.</div>
       </div>
-    </div>
+      <span style="flex:none; display:inline-flex; align-items:center; gap:6px; padding:12px 20px; background:#138255; color:#fff; border-radius:10px; font-size:14.5px; font-weight:700; white-space:nowrap;">내 시급 비교 &rarr;</span>
+    </a>
 
   </main>
 </div>

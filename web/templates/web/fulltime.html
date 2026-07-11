@@ -106,28 +106,6 @@
 
     <p style="margin:0 0 22px; font-size:15.5px; line-height:1.9; color:#3A4138;">근무 시간이 늘어날수록 <span style="color:#E23B2E; font-weight:700;">시급</span>이 점점 감소하는 경향이 있음을 알 수 있습니다.</p>
 
-    <!-- toggle: 활용법 1 -->
-    <div style="background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; overflow:hidden; margin-bottom:26px;">
-      <button data-toggle="use1" style="width:100%; display:flex; align-items:center; gap:10px; padding:15px 18px; text-align:left;">
-        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-        <span style="font-size:14.5px; font-weight:700; color:#454C43;">&larr; 클릭!&nbsp;&nbsp;⭐ 나의 구직에 활용법 ⭐</span>
-      </button>
-      <div data-panel="use1" hidden>
-        <div style="padding:0 22px 22px 40px; font-size:14.5px; line-height:1.85; color:#5C635A;">
-          <div style="font-size:15px; font-weight:800; color:#3A4138; margin-bottom:14px;">⭐ 나의 구직에 활용법 ⭐</div>
-          <ol style="margin:0 0 16px; padding-left:20px; display:flex; flex-direction:column; gap:9px;">
-            <li>내가 현재 보고 있는 공고의 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">주당 근무 시간</b>과 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">시급</b>을 계산합니다.</li>
-            <li>아래 그래프에서 점을 찍어 다른 공고들과 비교해 봅니다.</li>
-          </ol>
-          <p style="margin:0 0 18px;">예를 들어, 주당 근무시간이 <b style="color:#2A302A;">51시간</b>, 시급이 <b style="color:#2A302A;">2.7만원</b>인 경우, 아래 그래프에서 <b style="color:#2438D8;">파란색 별표</b>와 같이 점이 찍힙니다. <b style="color:#E23B2E;">빨간색 선</b>보다 위에 존재하므로 전국적인 평균보다 높은 수준의 시급이라고 볼 수 있습니다.</p>
-          <figure style="margin:0;">
-            <figcaption style="text-align:center; font-size:14px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 전국</figcaption>
-            <div id="chart-my-all" style="border:1px solid #ECECE4; border-radius:12px; padding:12px 14px; background:#fff;"></div>
-          </figure>
-        </div>
-      </div>
-    </div>
-
     <p style="margin:0 0 22px; font-size:15.5px; line-height:1.9; color:#3A4138;">이 그래프를 <span style="color:#2F6FE0; font-weight:700;">월급</span>으로 환산해보면 아래와 같습니다.</p>
 
     <!-- chart: monthly -->
@@ -203,87 +181,6 @@
 
     <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
 
-    <!-- toggle: 활용법 2 -->
-    <div style="background:#F6F6F3; border:1px solid #EAEAE3; border-radius:12px; overflow:hidden; margin-bottom:26px;">
-      <button data-toggle="use2" style="width:100%; display:flex; align-items:center; gap:10px; padding:15px 18px; text-align:left;">
-        <svg data-caret width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-        <span style="font-size:14.5px; font-weight:700; color:#454C43;">&larr; 클릭!&nbsp;&nbsp;⭐ 나의 구직에 활용법 ⭐</span>
-      </button>
-      <div data-panel="use2" hidden>
-        <div style="padding:0 22px 22px 40px; font-size:14.5px; line-height:1.85; color:#5C635A;">
-          <div style="font-size:15px; font-weight:800; color:#3A4138; margin-bottom:14px;">⭐ 나의 구직에 활용법 ⭐</div>
-          <ol style="margin:0 0 16px; padding-left:20px; display:flex; flex-direction:column; gap:9px;">
-            <li>내가 현재 보고 있는 공고의 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">주당 근무 시간</b>과 <b style="color:#3A4138; text-decoration:underline; text-underline-offset:3px;">시급</b>을 계산합니다.</li>
-            <li>아래 <b style="color:#3A4138;">지역 카테고리</b> 중 내 공고에 해당하는 지역 그래프에서 점을 찍어 다른 공고들과 비교해 봅니다.</li>
-          </ol>
-          <p style="margin:0 0 18px;">예를 들어, 주당 근무시간이 <b style="color:#2A302A;">51시간</b>, 시급이 <b style="color:#2A302A;">2.7만원</b>인 경우, 아래 그래프에서 <b style="color:#2438D8;">파란색 별표</b>와 같이 점이 찍힙니다. <b style="color:#E23B2E;">빨간색 선</b>보다 위에 존재하므로 <b style="color:#2E6FB0;">해당 지역</b> 평균보다 높은 수준의 시급이라고 볼 수 있습니다.</p>
-
-          <div style="display:flex; flex-direction:column; gap:9px;">
-            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
-              <button data-toggle="rseoul" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
-                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-                <span style="font-size:14px; font-weight:700; color:#454C43;">서울</span>
-              </button>
-              <div data-panel="rseoul" hidden>
-                <figure style="margin:0; padding:2px 14px 16px;">
-                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 서울</figcaption>
-                  <div id="chart-my-seoul" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
-                </figure>
-              </div>
-            </div>
-            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
-              <button data-toggle="rincheon" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
-                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-                <span style="font-size:14px; font-weight:700; color:#454C43;">인천</span>
-              </button>
-              <div data-panel="rincheon" hidden>
-                <figure style="margin:0; padding:2px 14px 16px;">
-                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 인천</figcaption>
-                  <div id="chart-my-incheon" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
-                </figure>
-              </div>
-            </div>
-            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
-              <button data-toggle="rgjung" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
-                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-                <span style="font-size:14px; font-weight:700; color:#454C43;">경기 중부</span>
-              </button>
-              <div data-panel="rgjung" hidden>
-                <figure style="margin:0; padding:2px 14px 16px;">
-                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 경기 중부</figcaption>
-                  <div id="chart-my-gjung" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
-                </figure>
-              </div>
-            </div>
-            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
-              <button data-toggle="rgouter" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
-                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-                <span style="font-size:14px; font-weight:700; color:#454C43;">경기 외곽</span>
-              </button>
-              <div data-panel="rgouter" hidden>
-                <figure style="margin:0; padding:2px 14px 16px;">
-                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 경기 외곽</figcaption>
-                  <div id="chart-my-gouter" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
-                </figure>
-              </div>
-            </div>
-            <div style="border:1px solid #E6E6DF; border-radius:10px; overflow:hidden; background:#fff;">
-              <button data-toggle="rjibang" style="width:100%; display:flex; align-items:center; gap:9px; padding:12px 15px; text-align:left;">
-                <svg data-caret width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(0deg); transition:transform .25s;"><path d="M9 5l7 7-7 7"/></svg>
-                <span style="font-size:14px; font-weight:700; color:#454C43;">지방</span>
-              </button>
-              <div data-panel="rjibang" hidden>
-                <figure style="margin:0; padding:2px 14px 16px;">
-                  <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">나의 풀타임 근무 시급 비교하기 &middot; 지방</figcaption>
-                  <div id="chart-my-jibang" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
-                </figure>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 퇴직금 -->
     <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">만약 <b style="color:#2A302A; text-decoration:underline; text-underline-offset:3px;">1년 이상 같은 약국에서</b> 일할 예정이라면, <span style="background:#E7E0F5; border-radius:3px; padding:0 4px; font-weight:700; color:#5E43A4;">퇴직금</span>은 어떻게 반영할 수 있을까요?</p>
     <p style="margin:0 0 14px; font-size:15.5px; line-height:1.9; color:#3A4138;">사업장의 규모와 상관없이 모든 사업장에서는 <b style="color:#2A302A;">근속연수 1년 이상</b> 및 <b style="color:#2A302A;">1주당 15시간 이상</b> 근무한 근로자에게 <span style="background:#E7E0F5; border-radius:3px; padding:0 4px; font-weight:700; color:#5E43A4;">퇴직금</span>을 지급해야 합니다. 퇴직금의 액수는 1일 평균임금 &times; 30일 &times; (재직일수 &divide; 365) 으로 계산됩니다.</p>
@@ -331,6 +228,17 @@
         </div>
       </div>
     </div>
+
+    <hr style="border:none; border-top:1px solid #ECECE4; margin:26px 0;" />
+
+    <!-- 내 시급 비교 CTA -->
+    <a href="{% url 'web:compare' %}" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; background:#EAF6F0; border:1px solid #C5E4CF; border-radius:14px; padding:20px 24px; text-decoration:none;">
+      <div style="flex:1; min-width:200px;">
+        <div style="font-size:16px; font-weight:800; color:#138255; margin-bottom:5px;">⭐ 내 시급은 어느 정도일까?</div>
+        <div style="font-size:14.5px; line-height:1.7; color:#3A4138;">근무 조건만 입력하면 같은 근무형태·지역 공고 중 <b style="color:#2A302A;">내 시급이 상위 몇 %</b>인지 바로 알려드려요.</div>
+      </div>
+      <span style="flex:none; display:inline-flex; align-items:center; gap:6px; padding:12px 20px; background:#138255; color:#fff; border-radius:10px; font-size:14.5px; font-weight:700; white-space:nowrap;">내 시급 비교 &rarr;</span>
+    </a>
 
   </main>
 </div>

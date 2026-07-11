@@ -32,17 +32,6 @@
   mount('chart-dist', C.buildViolin(d.dist));
   mount('chart-dist-sev', C.buildViolin(d.distSev));
 
-  // "나의 시급 비교" — 전국 + 지역별 (지역 점 필터 + 지역 평균을 입력으로 전달)
-  mount('chart-my-all', C.buildMyScatter(pts, null, d.regression.wage));
-  const regionChart = {
-    '서울': 'chart-my-seoul', '인천': 'chart-my-incheon', '경기 중부': 'chart-my-gjung',
-    '경기 외곽': 'chart-my-gouter', '지방': 'chart-my-jibang',
-  };
-  d.regionMeans.forEach(({ nm, mn }) => {
-    const id = regionChart[nm];
-    if (id) mount(id, C.buildMyScatter(pts.filter(p => p.region === nm), mn, d.regression.wage));
-  });
-
   mount('chart-full-hist', C.buildFullHistogram(d.fullHist));
   mount('chart-full-scatter', C.buildFullScatter(d.fullPts, d.fullRegression));
 

@@ -176,34 +176,6 @@ window.Charts = (() => {
     return svgRoot(W, H, e);
   }
 
-  // "나의 시급 비교" 별표 산점도 — pts(해당 범위 점), mean(지역 평균, 전국이면 null), reg {slope, intercept}
-  function buildMyScatter(pts, mean, reg) {
-    const W = 960, H = 500, L = 60, R = 28, T = 34, B = 56, pw = W - L - R, ph = H - T - B;
-    const xmin = 33, xmax = 62, ymin = 1.8, ymax = 4.2;
-    const yt = [2.0, 2.5, 3.0, 3.5, 4.0];
-    const mapX = x => L + ((x - xmin) / (xmax - xmin)) * pw;
-    const mapY = y => T + (1 - ((y - ymin) / (ymax - ymin))) * ph;
-    const slope = reg.slope;
-    // 지역 평균이 주어지면 (46시간, 평균)을 지나는 선, 아니면 전국 회귀선
-    const intercept = mean != null ? (mean - slope * 46) : reg.intercept;
-    const regY = x => slope * x + intercept;
-    const e = [];
-    e.push(h('rect', { x: L, y: T, width: pw, height: ph, fill: '#ECECE9' }));
-    for (let xi = xmin; xi <= xmax; xi++) { const x = mapX(xi); e.push(h('line', { x1: x, y1: T, x2: x, y2: T + ph, stroke: '#E0E0DB' })); e.push(h('text', { x, y: T + ph + 15, textAnchor: 'middle', fontSize: 9, fill: '#8A8A82' }, String(xi))); }
-    yt.forEach(v => { const y = mapY(v); e.push(h('line', { x1: L, y1: y, x2: L + pw, y2: y, stroke: '#E0E0DB' })); e.push(h('text', { x: L - 8, y: y + 4, textAnchor: 'end', fontSize: 11, fill: '#8A8A82' }, v.toFixed(1))); });
-    const band = 0.11, top = [], bot = [];
-    for (let x = 36; x <= 60; x += 2) { top.push([mapX(x), mapY(regY(x) + band)]); bot.push([mapX(x), mapY(regY(x) - band)]); }
-    e.push(h('polygon', { points: top.concat(bot.reverse()).map(p => p.join(',')).join(' '), fill: 'rgba(226,59,46,0.13)' }));
-    pts.forEach(p => { e.push(h('circle', { cx: mapX(p.x), cy: mapY(Math.max(ymin, Math.min(ymax, p.y))), r: 3, fill: 'rgba(55,55,55,0.40)' })); });
-    e.push(h('line', { x1: mapX(36), y1: mapY(regY(36)), x2: mapX(60), y2: mapY(regY(60)), stroke: '#E23B2E', strokeWidth: 3, strokeLinecap: 'round' }));
-    const sx = mapX(51), sy = mapY(2.7), sr = 11, sp = [];
-    for (let i = 0; i < 10; i++) { const ang = -Math.PI / 2 + i * Math.PI / 5; const rr = i % 2 === 0 ? sr : sr * 0.45; sp.push([sx + rr * Math.cos(ang), sy + rr * Math.sin(ang)]); }
-    e.push(h('polygon', { points: sp.map(p => p.join(',')).join(' '), fill: '#2438D8', stroke: '#fff', strokeWidth: 1.2 }));
-    e.push(h('text', { x: L + pw / 2, y: H - 6, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62' }, '주당 근무 시간 (단위 : 시간)'));
-    e.push(h('text', { x: 15, y: T + ph / 2, textAnchor: 'middle', fontSize: 12, fill: '#6B6B62', transform: 'rotate(-90 15 ' + (T + ph / 2) + ')' }, '시급 (단위 : 만 원)'));
-    return svgRoot(W, H, e);
-  }
-
   // 전체(파트+풀타임) 히스토그램 — 입력: [시간1공고수, …] (1~60h)
   function buildFullHistogram(fh) {
     const W = 960, H = 440, L = 56, R = 24, T = 34, B = 58, pw = W - L - R, ph = H - T - B;
@@ -512,5 +484,5 @@ window.Charts = (() => {
     return svgRoot(W, H, e);
   }
 
-  return { buildHistogram, buildScatter, buildStrip, buildMyScatter, buildFullHistogram, buildFullScatter, buildDateScatter, buildBubble, buildCompare, buildViolin, buildHoursScatter };
+  return { buildHistogram, buildScatter, buildStrip, buildFullHistogram, buildFullScatter, buildDateScatter, buildBubble, buildCompare, buildViolin, buildHoursScatter };
 })();
