@@ -705,6 +705,7 @@ class JobPostingAdmin(admin.ModelAdmin):
         from google import genai
         from .review_verify import apply_verdict, verify_posting
         from pipeline.usage import new_accumulator, record_llm_usage
+        from pipeline.pricing import compute_cost
 
         if not settings.GOOGLE_API_KEY:
             return JsonResponse({'ok': False, 'error': 'GOOGLE_API_KEY 미설정'}, status=500)
@@ -742,7 +743,14 @@ class JobPostingAdmin(admin.ModelAdmin):
                 status = 'failed'
                 note = str(e)[:120]
                 print(f'[auto-verify ERROR] pk={pk}: {e}')
-            results.append({'id': pk, 'status': status, 'title': title, 'note': note})
+            # 모달 표시용 토큰/비용 요약 (FLOW A process-one 과 동일 포맷)
+            usage = {
+                'input_tokens': acc['input_tokens'],
+                'output_tokens': acc['output_tokens'],
+                'total_tokens': acc['total_tokens'],
+                'cost_usd': compute_cost(model_name, acc['input_tokens'], acc['output_tokens']),
+            }
+            results.append({'id': pk, 'status': status, 'title': title, 'note': note, 'usage': usage})
             if status in counts:
                 counts[status] += 1
 

@@ -840,12 +840,12 @@
   }
 
   function runVerify(preset, presetLabel, items, scopeMsg) {
-    if (!items.length) { alert('검토할 공고가 없습니다.'); return; }
-    if (!confirm(`'${presetLabel}' ${scopeMsg}을 Gemini로 자동 검토합니다.\nAPI 비용이 발생하며 시간이 걸릴 수 있습니다. 진행할까요?`)) return;
+    if (!items.length) return;  // 확인/개수 선택은 호출부(개수 모달)에서 이미 처리
 
     const btn = document.getElementById('auto-verify-btn');
     const total = items.length;
     const tally = { ok: 0, error: 0, failed: 0, skipped: 0, done: 0 };
+    const totals = { tokens: 0, cost: 0 };  // 이번 배치 누적 토큰/비용
     verifyRun.running = true;
     verifyRun.stop = false;
     btn.disabled = true;
@@ -866,17 +866,31 @@
       stopBtn.style.display = 'none';
       closeBtn.disabled = false;
       document.getElementById('verify-progress-bar').classList.add('done');
-      document.getElementById('verify-summary').insertAdjacentHTML(
-        'beforeend', `<span class="vs-count">${stopped ? '⏹ 중지됨' : '✅ 완료'}</span>`);
+      document.getElementById('verify-summary').insertAdjacentHTML('beforeend',
+        `<span class="vs-count">${stopped ? '⏹ 중지됨' : '✅ 완료'}</span>` +
+        `<span class="vs-count" style="color:#6f42c1;">💰 ${fmtTok(totals.tokens)} tok · $${totals.cost.toFixed(4)}</span>`);
       btn.disabled = false;
       loadCounts();
       loadData();
     }
 
-    function processNext(i) {
-      if (verifyRun.stop) { finish(true); return; }
-      if (i >= items.length) { finish(false); return; }
+    // 공고끼리 독립적이므로 CONCURRENCY 건을 동시에 검토한다(직렬 대비 대폭 단축).
+    // 중지 시 진행 중인 건은 끝내되 새 건은 시작하지 않는다.
+    const CONCURRENCY = 6;
+    let next = 0;
+    let active = 0;
+    let finished = false;
 
+    function maybeFinish() {
+      if (finished) return;
+      const stopped = verifyRun.stop;
+      if ((stopped || next >= items.length) && active === 0) {
+        finished = true;
+        finish(stopped);
+      }
+    }
+
+    function processOne(i) {
       const cur = items[i];
       const row = verifyAppendRow({ id: cur.id, status: 'running', title: cur.title || '(제목 없음)', note: '검토 중…' });
 
@@ -893,17 +907,28 @@
           verifySetRow(row, item);
           if (tally[item.status] !== undefined) tally[item.status]++;
           tally.done++;
+          if (item.usage) { totals.tokens += item.usage.total_tokens || 0; totals.cost += item.usage.cost_usd || 0; }
           verifyUpdateSummary(total, tally);
-          processNext(i + 1);
         })
         .catch(() => {
           verifySetRow(row, { id: cur.id, status: 'failed', title: cur.title || '', note: '네트워크 오류' });
           tally.failed++; tally.done++;
           verifyUpdateSummary(total, tally);
-          processNext(i + 1);
+        })
+        .finally(() => {
+          active--;
+          pump();
         });
     }
-    processNext(0);
+
+    function pump() {
+      while (!verifyRun.stop && next < items.length && active < CONCURRENCY) {
+        active++;
+        processOne(next++);
+      }
+      maybeFinish();
+    }
+    pump();
   }
 
   function autoVerifyStep3() {
@@ -920,17 +945,29 @@
         const titleEl = tr && (tr.querySelector('.cell-title') || tr.querySelectorAll('td')[1]);
         return { id: parseInt(cb.value), title: titleEl ? titleEl.textContent.trim() : '' };
       });
-      runVerify(preset, presetLabel, items, `선택한 ${items.length}건`);
+      confirmRunModal(items.length, function() {
+        runVerify(preset, presetLabel, items, `선택한 ${items.length}건`);
+      }, {
+        startLabel: `${items.length.toLocaleString()}건 검토 시작`,
+        desc: `선택한 <strong>${items.length.toLocaleString()}</strong>건을 '${presetLabel}' 기준으로 ` +
+              `Gemini 자동 검토합니다. API 비용이 발생합니다.`,
+      });
       return;
     }
 
-    // 선택이 없으면 전체 후보를 검토.
+    // 선택이 없으면 후보를 조회한 뒤, 위에서부터 몇 건을 검토할지 개수 모달로 고른다.
     fetch(`verify-candidates/?preset=${preset}`)
       .then(r => r.json())
       .then(data => {
         const items = data.items || [];
         if (items.length === 0) { alert('검토할 공고가 없습니다.'); return; }
-        runVerify(preset, presetLabel, items, `${items.length}건`);
+        openCountModal(items.length, function(wanted) {
+          runVerify(preset, presetLabel, items.slice(0, wanted), `${wanted}건`);
+        }, {
+          startLabel: '검토 시작',
+          desc: `'${presetLabel}' 검토 후보 <strong>${items.length.toLocaleString()}</strong>건 중 ` +
+                `위에서부터 몇 건을 검토할지 정하세요. API 비용이 발생합니다.`,
+        });
       })
       .catch(() => alert('검토 대상 조회 실패'));
   }
@@ -1334,15 +1371,17 @@
       b.classList.toggle('active', parseInt(b.dataset.count, 10) === v));
   }
 
-  // 개수 지정 모드: 대기 목록에서 몇 건을 처리할지 고른다.
-  function openCountModal(total, onConfirm) {
+  // 개수 지정 모드: 대기/후보 목록에서 몇 건을 처리할지 고른다.
+  // opts.startLabel / opts.desc 로 문구를 바꿀 수 있다(기본은 대기 공고 처리용).
+  function openCountModal(total, onConfirm, opts) {
+    opts = opts || {};
     countModalMax = total;
     countModalOnConfirm = onConfirm;
     document.getElementById('count-pick').style.display = '';
-    document.getElementById('count-start-label').textContent = '처리 시작';
-    document.getElementById('count-desc').innerHTML =
-      `선택한 항목이 없습니다. 대기 중인 <strong>${total.toLocaleString()}</strong>건 중 ` +
-      `위에서부터(정렬 순서대로) 몇 건을 처리할지 정하세요.`;
+    document.getElementById('count-start-label').textContent = opts.startLabel || '처리 시작';
+    document.getElementById('count-desc').innerHTML = opts.desc ||
+      (`선택한 항목이 없습니다. 대기 중인 <strong>${total.toLocaleString()}</strong>건 중 ` +
+       `위에서부터(정렬 순서대로) 몇 건을 처리할지 정하세요.`);
     // 총 대기건수를 넘지 않는 프리셋 + '전체' 버튼을 만든다.
     const presets = [25, 50, 100, 250, 500].filter(n => n < total);
     countQuick.innerHTML = presets.map(n =>
@@ -1361,12 +1400,14 @@
   }
 
   // 확인 모드: 이미 정해진 N건을 처리할지 확인만 받는다(선택 항목 처리).
-  function confirmRunModal(count, onConfirm) {
+  // opts.startLabel / opts.desc 로 문구를 바꿀 수 있다(기본은 대기 공고 처리용).
+  function confirmRunModal(count, onConfirm, opts) {
+    opts = opts || {};
     countModalMax = count;
     countModalOnConfirm = onConfirm;
     document.getElementById('count-pick').style.display = 'none';
-    document.getElementById('count-start-label').textContent = `${count.toLocaleString()}건 처리 시작`;
-    document.getElementById('count-desc').innerHTML =
+    document.getElementById('count-start-label').textContent = opts.startLabel || `${count.toLocaleString()}건 처리 시작`;
+    document.getElementById('count-desc').innerHTML = opts.desc ||
       `선택한 <strong>${count.toLocaleString()}</strong>건을 LLM으로 처리하여 JobPosting을 생성합니다.`;
     countInput.value = count;
     countModal.style.display = 'flex';

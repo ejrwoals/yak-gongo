@@ -191,11 +191,20 @@ def _etc_section(df: pd.DataFrame) -> dict:
         'region': (reg if reg in REGION_ORDER else '지방'),
     } for h, w, m, reg in zip(pts_df[HOURS], pts_df[WAGE], pts_df[SALARY], pts_df['지역 대분류'])]
 
+    # 등록일별 산점도: 시급·등록일 있는 공고
+    ds_df = etc.dropna(subset=[WAGE, '등록일'])
+    date_scatter = [{
+        'date': (d.isoformat() if hasattr(d, 'isoformat') else str(d)),
+        'y': round(float(w), 3),
+        'region': (reg if reg in REGION_ORDER else '지방'),
+    } for d, w, reg in zip(ds_df['등록일'], ds_df[WAGE], ds_df['지역 대분류'])]
+
     return {
         'avgWage': _mean_or_none(etc[WAGE]),
         'count': int(len(etc)),
         'hist': _int_histogram(etc),
         'pts': pts,
+        'dateScatter': date_scatter,
         'regression': {
             'wage': _regression(pts_df[HOURS], pts_df[WAGE]),
             'month': _regression(pts_df[HOURS], pts_df[SALARY]),
@@ -325,6 +334,14 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
         full_pts_df[HOURS], full_pts_df[WAGE], full_pts_df[SALARY], full_pts_df['지역 대분류']
     )]
 
+    # ---- 풀타임 등록일별 산점도: x=등록일, y=시급 ----
+    full_ds_df = full.dropna(subset=[WAGE, '등록일'])
+    full_date_scatter = [{
+        'date': (d.isoformat() if hasattr(d, 'isoformat') else str(d)),
+        'y': round(float(w), 3),
+        'region': (reg if reg in REGION_ORDER else '지방'),
+    } for d, w, reg in zip(full_ds_df['등록일'], full_ds_df[WAGE], full_ds_df['지역 대분류'])]
+
     # ---- 퇴직금 보정 풀타임 (시급 × 13/12) ----
     full_sev = full.copy()
     full_sev[WAGE] = full_sev[WAGE] * 13 / 12
@@ -347,6 +364,7 @@ def compute_dashboard_data(df: pd.DataFrame) -> dict:
         'count': int(len(full)),
         'hist': _histogram(full),
         'pts': pts,
+        'dateScatter': full_date_scatter,
         'regression': {
             'wage': _regression(full_pts_df[HOURS], full_pts_df[WAGE]),
             'month': _regression(full_pts_df[HOURS], full_pts_df[SALARY]),

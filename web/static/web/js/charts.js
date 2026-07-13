@@ -258,19 +258,34 @@ window.Charts = (() => {
       m = new Date(m.getFullYear(), m.getMonth() + 1, 1); mi++;
     }
     pts.forEach(p => { e.push(h('circle', { cx: mapX(new Date(p.date).getTime()), cy: mapY(Math.max(ymin, Math.min(ymax, p.y))), r: 3, fill: opts.byRegion ? (REGION_COLOR[p.region] || '#2E3E8F') : 'rgba(45,45,45,0.42)', opacity: opts.byRegion ? 0.82 : 1 })); });
-    // 평균 시급 빨간 라인
-    const my = mapY(mean);
-    e.push(h('line', { x1: L, y1: my, x2: L + pw, y2: my, stroke: '#E23B2E', strokeWidth: 2, opacity: 0.7 }));
-    e.push(h('text', { x: L + pw - 4, y: my - 6, textAnchor: 'end', fontSize: 14, fill: '#E23B2E', fontWeight: 600 }, mean.toFixed(2)));
+    // 회귀 추세선 (빨강) — 최소제곱 (x: xmin 기준 경과일)
+    const n = pts.length;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    pts.forEach(p => { const x = (new Date(p.date).getTime() - xmin) / DAY; sx += x; sy += p.y; sxx += x * x; sxy += x * p.y; });
+    const denom = n * sxx - sx * sx;
+    const slope = denom ? (n * sxy - sx * sy) / denom : 0;
+    const intercept = n ? (sy - slope * sx) / n : mean;
+    const xSpan = (xmax - xmin) / DAY;
+    const ry1 = intercept, ry2 = intercept + slope * xSpan;
+    e.push(h('line', { x1: mapX(xmin), y1: mapY(ry1), x2: mapX(xmax), y2: mapY(ry2), stroke: '#E23B2E', strokeWidth: 2, opacity: 0.85 }));
+    // 연간 변화량 (원 단위) — 추세선 끝점 옆 흰 배경 뱃지로 표기
+    const perYearWon = Math.round(slope * 365 * 10000);
+    const trendLabel = (perYearWon >= 0 ? '+' : '−') + Math.abs(perYearWon).toLocaleString() + '원/년';
+    const kc = (trendLabel.match(/[가-힣]/g) || []).length;
+    const bw = 20 + kc * 14 + (trendLabel.length - kc) * 8;
+    const bx = L + pw - 4, by = mapY(ry2) - 10;
+    e.push(h('rect', { x: bx - bw, y: by - 15, width: bw, height: 21, fill: '#FFFFFF', rx: 4, opacity: 0.75 }));
+    e.push(h('text', { x: bx - 8, y: by, textAnchor: 'end', fontSize: 13, fill: '#E23B2E', fontWeight: 600 }, trendLabel));
     // 범례
     const items = opts.byRegion
-      ? [['서울', REGION_COLOR['서울']], ['인천', REGION_COLOR['인천']], ['경기 중부', REGION_COLOR['경기 중부']], ['경기 외곽', REGION_COLOR['경기 외곽']], ['지방', REGION_COLOR['지방']], ['평균 시급', '#E23B2E']]
-      : [['평균 시급', '#E23B2E']];
+      ? [['서울', REGION_COLOR['서울']], ['인천', REGION_COLOR['인천']], ['경기 중부', REGION_COLOR['경기 중부']], ['경기 외곽', REGION_COLOR['경기 외곽']], ['지방', REGION_COLOR['지방']], ['추세선', '#E23B2E']]
+      : [['추세선', '#E23B2E']];
+    const lineNames = { '추세선': 1 };
     const lh = 18, lw = 110, lx = L + pw - lw - 4, ly = T + 10;
     e.push(h('rect', { x: lx - 8, y: ly - 8, width: lw, height: items.length * lh + 6, fill: '#FFFFFF', stroke: '#D9D9D2', rx: 4, opacity: 0.92 }));
     items.forEach(([nm, col], i) => {
       const yy = ly + 6 + i * lh;
-      if (nm === '평균 시급') e.push(h('line', { x1: lx, y1: yy - 4, x2: lx + 14, y2: yy - 4, stroke: col, strokeWidth: 2 }));
+      if (lineNames[nm]) e.push(h('line', { x1: lx, y1: yy - 4, x2: lx + 14, y2: yy - 4, stroke: col, strokeWidth: 2 }));
       else e.push(h('circle', { cx: lx + 7, cy: yy - 4, r: 4, fill: col }));
       e.push(h('text', { x: lx + 20, y: yy, fontSize: 11, fill: '#555' }, nm));
     });

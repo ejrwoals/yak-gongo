@@ -26,6 +26,7 @@
   document.getElementById('ft-count').textContent = d.count.toLocaleString();
 
   mount('chart-hist', C.buildHistogram(d.hist));
+  if (d.dateScatter) mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false }));
   mount('chart-scatter-all', C.buildScatter(pts, 'all', d.regression.wage));
   mount('chart-monthly', C.buildScatter(pts, 'month', d.regression.month));
   mount('chart-regional', C.buildScatter(pts, 'region', d.regression.wage));
