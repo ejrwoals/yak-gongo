@@ -19,8 +19,8 @@
   document.getElementById('wk-count').textContent = d.count.toLocaleString();
 
   mount('chart-hist', C.buildHistogram(d.hist));
-  mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false }));
-  mount('chart-date-region', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: true, yPadTop: 0.7 }));
+  mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false, yearLines: true }));
+  mount('chart-date-region', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: true, yPadTop: 0.7, yearLines: true }));
   mount('chart-bubble', C.buildViolin(d.dist));
 
   // 지역별 평균값 표

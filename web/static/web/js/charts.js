@@ -276,6 +276,18 @@ window.Charts = (() => {
     const bx = L + pw - 4, by = mapY(ry2) - 10;
     e.push(h('rect', { x: bx - bw, y: by - 15, width: bw, height: 21, fill: '#FFFFFF', rx: 4, opacity: 0.75 }));
     e.push(h('text', { x: bx - 8, y: by, textAnchor: 'end', fontSize: 13, fill: '#E23B2E', fontWeight: 600 }, trendLabel));
+    // 연도 경계(매년 1월 1일) 세로 구분선 — 연도 구분을 눈에 띄게 (옵션)
+    if (opts.yearLines) {
+      for (let yr = d0.getFullYear(); ; yr++) {
+        const t = new Date(yr, 0, 1).getTime();
+        if (t > xmax) break;
+        if (t < xmin) continue;
+        const x = mapX(t);
+        e.push(h('line', { x1: x, y1: T, x2: x, y2: T + ph, stroke: '#8A9086', strokeWidth: 1.4, strokeDasharray: '6 5', opacity: 0.5 }));
+        e.push(h('rect', { x: x - 21, y: T + 4, width: 42, height: 17, rx: 4, fill: '#FFFFFF', opacity: 0.85 }));
+        e.push(h('text', { x, y: T + 16, textAnchor: 'middle', fontSize: 11, fill: '#6B7167', fontWeight: 700 }, yr + '년'));
+      }
+    }
     // 범례
     const items = opts.byRegion
       ? [['서울', REGION_COLOR['서울']], ['인천', REGION_COLOR['인천']], ['경기 중부', REGION_COLOR['경기 중부']], ['경기 외곽', REGION_COLOR['경기 외곽']], ['지방', REGION_COLOR['지방']], ['추세선', '#E23B2E']]

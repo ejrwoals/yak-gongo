@@ -26,7 +26,7 @@
   document.getElementById('etc-count').textContent = d.count.toLocaleString();
 
   mount('chart-hist', C.buildHistogram(d.hist));
-  if (d.dateScatter) mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false }));
+  if (d.dateScatter) mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false, yearLines: true }));
   mount('chart-scatter-all', C.buildScatter(pts, 'all', d.regression.wage, scOpts));
   mount('chart-monthly', C.buildScatter(pts, 'month', d.regression.month, { xRange: [0, 38], xStep: 2, lineRange: [1, 35] }));
   mount('chart-regional', C.buildScatter(pts, 'region', d.regression.wage, scOpts));

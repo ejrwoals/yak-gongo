@@ -45,6 +45,12 @@
     document.getElementById('ov-count').textContent = ov.count.toLocaleString();
     document.getElementById('ov-chart-region').append(C.buildScatter(ovPts, 'region', ov.regression, scOpts));
     document.getElementById('ov-chart-month').append(C.buildScatter(ovPts, 'month', ov.regression, { xRange: [0, 62], xStep: 5, lineRange: [1, 60], monthCurve: true, colorByRegion: true }));
+
+    // 연간 시급 상승률 — 전체 공고 등록일별 시급 산점도 + 빨간 추세선
+    if (ov.dateScatter && ov.dateScatter.length) {
+      document.getElementById('tr-count').textContent = ov.dateScatter.length.toLocaleString();
+      document.getElementById('tr-chart-date').append(C.buildDateScatter(ov.dateScatter, ov.avgWage, { byRegion: false, yearLines: true }));
+    }
   }
 
   // 지역별 평균 시급 비교 — 근무형태 칩 선택 → 전국 + 5개 지역 막대
@@ -99,6 +105,19 @@
     if (gClose) gClose.addEventListener('click', closeModal);
     gModal.addEventListener('click', e => { if (e.target === gModal) closeModal(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && !gModal.hidden) closeModal(); });
+  }
+
+  // 연간 시급 상승률 모달 (열기/닫기 — 버튼·X·배경 클릭·ESC)
+  const tModal = document.getElementById('trend-modal');
+  const tOpen = document.getElementById('trend-modal-open');
+  const tClose = document.getElementById('trend-modal-close');
+  if (tModal && tOpen) {
+    const openModal = () => { tModal.hidden = false; document.body.style.overflow = 'hidden'; };
+    const closeModal = () => { tModal.hidden = true; document.body.style.overflow = ''; };
+    tOpen.addEventListener('click', openModal);
+    if (tClose) tClose.addEventListener('click', closeModal);
+    tModal.addEventListener('click', e => { if (e.target === tModal) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !tModal.hidden) closeModal(); });
   }
 
   // 지역 분류 기준 모달 (열기/닫기 — 버튼·X·배경 클릭·ESC)

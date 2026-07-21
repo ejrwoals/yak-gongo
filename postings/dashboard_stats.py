@@ -229,10 +229,21 @@ def _home_overview(df: pd.DataFrame) -> dict:
         'y': round(float(w), 3),
         'region': (reg if reg in REGION_ORDER else '지방'),
     } for h, w, reg in zip(sub[HOURS], sub[WAGE], sub['지역 대분류'])]
+
+    # 등록일별 산점도: 전국 장기 근무 전체 공고 (x=등록일, y=시급) — 연간 시급 상승 추세
+    ds_df = long.dropna(subset=[WAGE, '등록일'])
+    date_scatter = [{
+        'date': (d.isoformat() if hasattr(d, 'isoformat') else str(d)),
+        'y': round(float(w), 3),
+        'region': (reg if reg in REGION_ORDER else '지방'),
+    } for d, w, reg in zip(ds_df['등록일'], ds_df[WAGE], ds_df['지역 대분류'])]
+
     return {
         'count': int(len(sub)),
         'pts': pts,
         'regression': _regression(sub[HOURS], sub[WAGE]),
+        'dateScatter': date_scatter,
+        'avgWage': _mean_or_none(long[WAGE]),
     }
 
 

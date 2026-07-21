@@ -123,6 +123,15 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9AA098" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>
 
+        <!-- 연간 시급 상승률 그래프 (모달 열기) -->
+        <button id="trend-modal-open" style="display:flex; align-items:center; justify-content:space-between; gap:9px; padding:14px 20px; border-radius:12px; border:1px solid #EAEAE3; background:#fff; box-shadow:0 2px 8px rgba(30,40,30,0.05); width:calc(100% - 18px); white-space:nowrap; margin:-18px 0 30px 18px;">
+          <span style="display:flex; align-items:center; gap:9px;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#E23B2E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+            <span style="font-size:15px; font-weight:800;">연간 시급 상승률</span>
+          </span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9AA098" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+
         <!-- 지역별 평균 시급 비교 (근무형태 선택) -->
         <div style="display:flex; align-items:center; gap:10px; margin:0 0 6px 2px;">
           <span style="width:6px; height:6px; border-radius:50%; background:#1E2420;"></span>
@@ -235,6 +244,32 @@
       <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">주당 근무시간에 따른 월급 &middot; 전국</figcaption>
       <div id="ov-chart-month" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
     </figure>
+  </div>
+</div>
+
+<!-- 연간 시급 상승률 모달 -->
+<div id="trend-modal" class="modal-overlay" hidden>
+  <div class="modal-dialog">
+    <button id="trend-modal-close" class="modal-close" aria-label="닫기">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6157" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <h2 style="margin:0 0 4px; font-size:20px; font-weight:800; letter-spacing:-0.5px;">연간 시급 상승률</h2>
+    <p style="margin:0 0 20px; font-size:13px; font-weight:600; color:#9AA098;">전국(풀타임 + 주말 + 기타 파트) 전체 공고의 등록일별 시급 추세</p>
+
+    <!-- callout: 전체 공고 수 -->
+    <div style="position:relative; background:#fff; border:1px solid #ECECE4; border-radius:10px; padding:14px 20px; overflow:hidden; margin-bottom:18px;">
+      <div style="position:absolute; top:0; left:0; bottom:0; width:4px; background:#E23B2E;"></div>
+      <div style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
+        <span style="font-size:14.5px; font-weight:700; color:#454C43;">추세선에 반영된 전체 공고 수 :</span>
+        <span style="font-size:20px; font-weight:800; color:#3A4138; letter-spacing:-0.5px;"><span id="tr-count"></span> <span style="font-size:13px;">개</span></span>
+      </div>
+    </div>
+    <p style="margin:0 0 14px; font-size:14px; line-height:1.75; color:#3A4138;"><b style="color:#2A302A;">&rarr;</b> <b style="color:#2A302A;">공고가 등록된 날짜</b>를 x축, <span style="color:#E23B2E; font-weight:700;">시급(세후)</span>을 y축으로 하여, 근무 형태에 상관없이 <b style="color:#2A302A;">전체 공고</b>를 한 그래프에 모아 표현했습니다. 각 점이 하나의 공고를 의미합니다.</p>
+    <figure style="margin:0 0 14px;">
+      <figcaption style="text-align:center; font-size:13.5px; font-weight:700; color:#3A4138; margin-bottom:8px;">등록일별 시급 분포 with Trend line &middot; 전국</figcaption>
+      <div id="tr-chart-date" style="border:1px solid #ECECE4; border-radius:10px; padding:10px 12px; background:#fff;"></div>
+    </figure>
+    <p style="margin:0; font-size:14px; line-height:1.75; color:#3A4138;"><span style="color:#E23B2E; font-weight:700;">빨간색 추세선</span>의 기울기로 시간이 지남에 따라 시급이 오르는 추세인지 가늠해 볼 수 있습니다. 우측 라벨은 <b style="color:#2A302A;">연간 시급 변화량</b>입니다.</p>
   </div>
 </div>
 

@@ -18,8 +18,8 @@
   document.getElementById('ot-total').textContent = d.totalCount.toLocaleString();
   document.getElementById('ot-count').textContent = d.count.toLocaleString();
 
-  mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false }));
-  mount('chart-date-region', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: true, yPadTop: 0.7 }));
+  mount('chart-date-all', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: false, yearLines: true }));
+  mount('chart-date-region', C.buildDateScatter(d.dateScatter, d.avgWage, { byRegion: true, yPadTop: 0.7, yearLines: true }));
   mount('chart-bubble', C.buildViolin(d.dist));
 
   // 일회성 vs 장기 분포 비교 (x축 = 근무 지속성)
